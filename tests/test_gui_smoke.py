@@ -17,10 +17,19 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 
-@pytest.fixture
-def app(tmp_path, monkeypatch):
-    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+@pytest.fixture(scope="session")
+def tkroot():
+    """Satu interpreter Tk untuk semua test: sv_ttk & cache ikon terikat ke interpreter pertama, dan membuat
+    tk.Tk() berulang tidak stabil di runner Windows."""
     import tkinter as tk
+    root = tk.Tk()
+    yield root
+    root.destroy()
+
+
+@pytest.fixture
+def app(tmp_path, monkeypatch, tkroot):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     import gui.app
     import gui.common
     monkeypatch.setattr(gui.common, "SETTINGS_PATH", tmp_path / "appdata" / "FolderOrganizer" / "settings.json")
@@ -32,11 +41,13 @@ def app(tmp_path, monkeypatch):
     for name, mod in list(sys.modules.items()):
         if name.startswith("gui.") and hasattr(mod, "Dialog"):
             monkeypatch.setattr(mod, "Dialog", AutoDialog)
-    root = tk.Tk()
-    a = gui.app.App(root)
+    for w in tkroot.winfo_children():
+        w.destroy()
+    a = gui.app.App(tkroot)
     yield a
     a.watch_stop.set()
-    root.destroy()
+    for w in tkroot.winfo_children():
+        w.destroy()
 
 
 def pump(a, secs=0.3):
