@@ -87,18 +87,29 @@ class AppShell:
     def _on_root_configure(self, e):
         if e.widget is not self.root or sys.platform != "win32":
             return
+        self._schedule_dpi_check(250)
+
+    def _schedule_dpi_check(self, ms):
+        """Paling banyak satu pengecekan DPI yang tertunda (yang lama selalu dibatalkan dulu)."""
+        if getattr(self, "_torn_down", False):
+            return
         if getattr(self, "_dpi_job", None):
-            self.root.after_cancel(self._dpi_job)
-        self._dpi_job = self.root.after(250, self._check_dpi)
+            try:
+                self.root.after_cancel(self._dpi_job)
+            except tk.TclError:
+                pass
+        self._dpi_job = self.root.after(ms, self._check_dpi)
 
     def _check_dpi(self):
         """Window pindah ke monitor dengan skala lain → atur ulang skala Tk & bangun ulang UI (bukan saat sibuk)."""
         self._dpi_job = None
+        if getattr(self, "_torn_down", False):
+            return
         dpi = self._window_dpi()
         if not dpi or dpi == self._dpi:
             return
         if self.busy or self.root.grab_current() is not None:  # jangan bangun ulang saat sibuk / ada dialog terbuka
-            self._dpi_job = self.root.after(1000, self._check_dpi)
+            self._schedule_dpi_check(1000)
             return
         self._dpi = dpi
         self._apply_dpi(dpi)
@@ -333,7 +344,8 @@ class AppShell:
                     self.root.report_callback_exception(*sys.exc_info())
         finally:
             try:
-                self._poll_id = self.root.after(80, self._poll)
+                if not getattr(self, "_torn_down", False):
+                    self._poll_id = self.root.after(80, self._poll)
             except tk.TclError:
                 pass  # window sudah ditutup
 
@@ -612,6 +624,7 @@ class AppShell:
 
     def teardown(self):
         """Hentikan semua timer & handler milik instance ini (dipakai saat menutup, dan oleh test)."""
+        self._torn_down = True
         self.watch_stop.set()
         for job in ("_poll_id", "_update_job", "_dpi_job"):
             try:
