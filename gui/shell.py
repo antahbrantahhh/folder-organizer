@@ -541,11 +541,12 @@ class AppShell:
         self._shutdown()
 
     def _close_when_idle(self, since):
-        """Tunggu tugas berhenti di item berikutnya (yang sudah dipindah tercatat, bisa di-undo), lalu tutup."""
-        if self.busy and time.time() - since < 30:
+        """Tunggu tugas berhenti di item berikutnya (yang sudah dipindah tercatat, bisa di-undo), lalu lanjut ke
+        alur tutup biasa (termasuk pertanyaan perubahan aturan yang belum disimpan). Tidak memutus worker paksa."""
+        if self.busy:
             self.root.after(100, lambda: self._close_when_idle(since))
             return
-        self._shutdown()
+        self._on_close()
 
     def _shutdown(self):
         self.watch_stop.set()

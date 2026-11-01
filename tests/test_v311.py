@@ -205,3 +205,52 @@ def test_label_paths_must_stay_inside(target, bad):
         org.prepare_config({"rules": [], "folder_info": {bad: "x"}})
     res = org.apply_labels(target, {"folder_info": {bad: "x"}})
     assert res[0][1] == "error"
+
+
+# ───────── verifikasi independen v3.11 ─────────
+
+def test_folders_above_appdata_and_other_profiles_refused(tmp_path, monkeypatch):
+    users = tmp_path / "Users"
+    me, other = users / "bangke", users / "other"
+    for d in (me / "AppData" / "Roaming", me / "AppData" / "Local", other / "Downloads"):
+        d.mkdir(parents=True)
+    monkeypatch.setenv("USERPROFILE", str(me))
+    monkeypatch.setenv("APPDATA", str(me / "AppData" / "Roaming"))
+    monkeypatch.setenv("LOCALAPPDATA", str(me / "AppData" / "Local"))
+    monkeypatch.setattr(org.tempfile, "gettempdir", lambda: str(me / "AppData" / "Local" / "Temp"))
+    for bad in (me / "AppData", other, users):
+        assert org.unsafe_target(bad), bad
+    assert org.unsafe_target(other / "Downloads") is None
+
+
+@pytest.mark.parametrize("dest", ["_Archive/Folders_{year}", "{year}/Folders", "./_Archive/Old"])
+def test_recursive_skip_handles_any_placeholder_position(target, dest):
+    import datetime
+    y = datetime.date.today().year
+    sample = dest.replace("{year}", str(y)).lstrip("./")
+    archived = touch(target / sample / "proj" / "r.pdf")
+    c = org.prepare_config({"recursive": True, "rules": [{"name": "docs", "ext": ["pdf"], "dest": "Documents"}],
+                            "folder_rules": [{"name": "f", "name_regex": "^zzz$", "dest": dest}]})
+    assert archived not in {m.src for m in org.build_plan(target, c)}
+
+
+def test_failed_move_keeps_users_existing_empty_folder(target, monkeypatch):
+    (target / "Documents").mkdir()
+    src = touch(target / "a.pdf")
+    monkeypatch.setattr(org.os, "rename", lambda a, b: (_ for _ in ()).throw(PermissionError(13, "in use")))
+    org.execute(target, [org.Move(src, target / "Documents" / "2026" / "a.pdf", "r")], "apply")
+    assert (target / "Documents").is_dir() and not (target / "Documents" / "2026").exists()
+
+
+def test_icon_changed_by_user_after_label_is_kept(target):
+    f = target / "Media"
+    f.mkdir()
+    (f / "desktop.ini").write_text("[.ShellClassInfo]\r\nIconResource=orig.ico,0\r\n", encoding="utf-16")
+    org.write_folder_label(f, "Photos", icon="media.ico,0")
+    ini = org._read_ini(f / "desktop.ini").replace("IconResource=media.ico,0", "IconResource=user2.ico,0")
+    (f / "desktop.ini").write_text(ini, encoding="utf-16")  # user ganti ikon di Explorer
+    org.remove_folder_label(f)
+    assert "IconResource=user2.ico,0" in org._read_ini(f / "desktop.ini")
+    org.write_folder_label(f, "Photos", icon="media.ico,0")
+    org.remove_folder_label(f)
+    assert "IconResource=user2.ico,0" in org._read_ini(f / "desktop.ini")

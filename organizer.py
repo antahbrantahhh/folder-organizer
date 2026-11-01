@@ -322,13 +322,16 @@ def unsafe_target(root: Path):
         if not d:
             continue
         d = Path(d).resolve()
-        if (r == d or d in r.parents) and not (in_temp and key in ("APPDATA", "LOCALAPPDATA")):
+        if in_temp and key in ("APPDATA", "LOCALAPPDATA"):
+            continue
+        if r == d or d in r.parents or r in d.parents:  # di dalam, atau di atas (mis. ...\AppData)
             return T("e_unsafe_system", path=d)
-    exact = [os.environ.get("USERPROFILE"), str(Path.home())]
-    if any(e and r == Path(e).resolve() for e in exact):
-        return T("e_unsafe_profile")
-    if any(e and r == Path(e).resolve().parent for e in exact):  # C:\Users (semua profil)
-        return T("e_unsafe_system", path=r)
+    for e in filter(None, (os.environ.get("USERPROFILE"), str(Path.home()))):
+        users = Path(e).resolve().parent
+        if r == users:  # C:\Users (semua profil)
+            return T("e_unsafe_system", path=r)
+        if r.parent == users:  # folder profil siapa pun (C:\Users\<nama>)
+            return T("e_unsafe_profile")
     return None
 
 
@@ -613,6 +616,18 @@ def _compile_rule(r: dict, kind: str, i: int, library: dict):
             raise ConfigError(T("e_regex_invalid", name=r["name"], err=e))
 
 
+def _dest_glob(template: str) -> str:
+    """Template tujuan → glob path relatif (placeholder = *), mis. "_Archive/Folders/{period}" → "_archive/folders/*".
+    Folder yang cocok berisi folder utuh hasil aturan folder."""
+    t = template.replace("\\", "/").strip()
+    while t.startswith("./"):
+        t = t[2:]
+    t = t.strip("/")
+    if t in ("", "."):
+        return ""
+    return re.sub(r"\{[^}]*\}", "*", t).lower()
+
+
 def label_path_error(rel_path) -> str:
     """Path label harus relatif dan di dalam folder target."""
     s = str(rel_path).replace("\\", "/").strip()
@@ -655,7 +670,7 @@ def prepare_config(cfg: dict) -> dict:
     # jangan dibongkar lagi oleh mode recursive.
     fdests = [r["dest"] for r in cfg["folder_rules"] if r.get("enabled") is not False]
     fdests += [cfg["folder_fallback"]] if cfg["folder_fallback"] else []
-    cfg["_folder_dest_roots"] = {d.split("{")[0].replace("\\", "/").strip().strip("/").lower() for d in fdests} - {"", "."}
+    cfg["_folder_dest_roots"] = sorted({g for g in map(_dest_glob, fdests) if g})
     _check_folder_info(cfg.get("folder_info"))
     # Umur folder dihitung dari aktivitas terakhir di dalamnya, hanya kalau memang dipakai
     cfg["_folder_deep_age"] = any(
@@ -702,7 +717,7 @@ def render_dest(template: str, p: Path, st, is_dir: bool = False, date_format: s
 def _keep_subdir(root: Path, dp: Path, d: str, exclude: list, tool_dir: Path, skip_rel=()) -> bool:
     """Apakah subfolder d ikut di-scan (mode recursive)."""
     r = rel(root, dp / d).replace("\\", "/")
-    if r.lower() in skip_rel:
+    if any(fnmatch.fnmatchcase(r.lower(), g) for g in skip_rel):
         return False  # tujuan aturan folder: berisi folder utuh yang sudah dirapikan
     if (dp / d).resolve() == tool_dir:
         return False  # jangan sentuh folder organizer sendiri
@@ -988,6 +1003,20 @@ def move_item(src: Path, dst: Path):
         raise
 
 
+def _make_parents(d: Path) -> list:
+    """mkdir -p yang mengembalikan folder yang benar-benar baru dibuat (urut dari atas)."""
+    missing = []
+    while not d.exists():
+        missing.append(d)
+        if d.parent == d:
+            break
+        d = d.parent
+    missing.reverse()
+    for x in missing:
+        x.mkdir(exist_ok=True)
+    return missing
+
+
 def _move_error(e: OSError, dst: Path) -> str:
     if sys.platform == "win32" and len(str(dst)) >= MAX_PATH_WIN:
         return T("e_path_too_long", n=len(str(dst)))
@@ -1023,8 +1052,9 @@ def _execute_locked(root: Path, moves: list, label: str, progress, cancel) -> tu
         for m in moves:
             if cancel is not None and cancel.is_set():
                 break
+            created = []
             try:
-                m.dst.parent.mkdir(parents=True, exist_ok=True)
+                created = _make_parents(m.dst.parent)
                 if m.dst.exists():  # bisa terjadi kalau folder berubah sejak plan
                     m.dst = unique_dest(m.dst, set(), is_dir=m.src.is_dir())
                 move_item(m.src, m.dst)
@@ -1034,7 +1064,11 @@ def _execute_locked(root: Path, moves: list, label: str, progress, cancel) -> tu
             except OSError as e:
                 failed.append((m.src, _move_error(e, m.dst)))
                 log.warning("move failed: %s -> %s: %s", m.src, m.dst, e)
-                remove_empty_parents(m.dst.parent, root)  # folder tujuan yang baru dibuat tapi tetap kosong
+                for d in reversed(created):  # hanya folder yang baru dibuat untuk item ini, kalau masih kosong
+                    try:
+                        d.rmdir()
+                    except OSError:
+                        break
             if progress:
                 progress(ok + len(failed), len(moves))
     if ok == 0:
@@ -1369,6 +1403,18 @@ def _is_icon(line: str) -> bool:
     return line.lower().startswith("iconresource=")
 
 
+def _current_icon(shell: list):
+    line = next((x for x in shell if _is_icon(x)), None)
+    return line.partition("=")[2].strip() if line else None
+
+
+def _restore_icon(shell: list, ours: dict) -> list:
+    shell = [x for x in shell if not _is_icon(x)]
+    if ours.get("origiconresource"):
+        shell.append(f"IconResource={ours['origiconresource']}")
+    return shell
+
+
 _README_FOOTER_RX = re.compile(r"^\(.*Folder Organizer.*\)$")
 
 
@@ -1393,16 +1439,14 @@ def write_folder_label(folder: Path, desc: str, icon: str = None, readme: bool =
         shell, others, ours = _split_ini(_read_ini(ini))  # pertahankan baris lain (mis. LocalizedResourceName)
         _win_set_attrs(ini, replace=0x80)  # NORMAL, supaya bisa ditimpa
     marker = [LABEL_SECTION, "Managed=1"]
+    current = _current_icon(shell)
+    app_icon = current is not None and current == ours.get("seticon")  # ikon yang sekarang dipasang oleh app
     if icon:
-        old_icon = next((x for x in shell if _is_icon(x)), None)
+        orig = ours.get("origiconresource", "") if app_icon else (current or "")
         shell = [x for x in shell if not _is_icon(x)] + [f"IconResource={icon}"]
-        orig = ours.get("origiconresource") or (old_icon.partition("=")[2] if old_icon and not ours.get("seticon")
-                                                 else "")
-        marker += ["SetIcon=1"] + ([f"OrigIconResource={orig}"] if orig else [])
-    elif ours.get("seticon"):  # ikon dari aturan sebelumnya sudah tidak dipakai → kembalikan yang asli
-        shell = [x for x in shell if not _is_icon(x)]
-        if ours.get("origiconresource"):
-            shell.append(f"IconResource={ours['origiconresource']}")
+        marker += [f"SetIcon={icon}"] + ([f"OrigIconResource={orig}"] if orig else [])
+    elif app_icon:  # ikon dari aturan sebelumnya sudah tidak dipakai → kembalikan yang asli
+        shell = _restore_icon(shell, ours)
     lines = ["[.ShellClassInfo]", f"InfoTip={' '.join(desc.split())}"] + shell + others + marker
     ini.write_text("\r\n".join(lines) + "\r\n", encoding="utf-16")  # UTF-16 → aman untuk teks non-ASCII
     _win_set_attrs(ini, add=0x2 | 0x4)    # hidden + system
@@ -1438,10 +1482,8 @@ def remove_folder_label(folder: Path) -> bool:
     ini = folder / "desktop.ini"
     if is_managed_label(folder):
         shell, others, ours = _split_ini(_read_ini(ini))
-        if ours.get("seticon"):  # ikon dari app → kembalikan ikon asli (kalau ada)
-            shell = [x for x in shell if not _is_icon(x)]
-            if ours.get("origiconresource"):
-                shell.append(f"IconResource={ours['origiconresource']}")
+        if ours.get("seticon") and _current_icon(shell) == ours["seticon"]:  # ikon masih dari app → kembalikan asli
+            shell = _restore_icon(shell, ours)
         _win_set_attrs(ini, replace=0x80)
         if shell or others:
             ini.write_text("\r\n".join(["[.ShellClassInfo]"] + shell + others) + "\r\n", encoding="utf-16")

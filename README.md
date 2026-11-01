@@ -110,8 +110,8 @@ labels that are no longer in the rules are marked "not in rules" so you can clea
 ## Safety
 - **Moves never copy:** an item is renamed on the same drive or, if Windows refuses (file open, antivirus,
   download in progress), reported as "in use" and left untouched. Undo can be retried for items that were in use.
-- **System folders are refused:** drive roots, Windows, Program Files, ProgramData, AppData, `C:\Users` and your
-  profile folder itself. Pick a folder such as Downloads, Desktop or Documents.
+- **System folders are refused:** drive roots, Windows, Program Files, ProgramData, AppData, `C:\Users` and any
+  user profile folder itself. Pick a folder such as Downloads, Desktop or Documents.
 - **One process per folder:** the GUI, the CLI and watch mode never move files in the same folder at the same
   time. The lock is held by Windows and released automatically if the app crashes.
 - Folder labels never overwrite your own `_README.txt` and keep existing custom folder icons.

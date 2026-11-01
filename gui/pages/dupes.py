@@ -152,8 +152,7 @@ class DuplicatesPage:
         if r != "ok":
             return
         scanned = {g["files"][i][0]: g["files"][i][1] for g in self.dup_groups for i in range(len(g["files"]))}
-        keepers = {m.src: g["files"][g["keeper"]][0] for g in self.dup_groups for m in moves
-                   if any(m.src == f[0] for f in g["files"])}
+        keepers = {g["files"][i][0]: g["files"][g["keeper"]][0] for g in self.dup_groups for i in g["on"]}
 
         def job():
             # file bisa berubah sejak dicek (diedit, di-undo, dipindah watch): yang berubah tidak dipindah

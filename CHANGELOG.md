@@ -6,8 +6,8 @@
   antivirus scan, download still being written) the item is reported as "in use" and left untouched. Previously
   the fallback copied then deleted, which could leave a duplicate or a half-deleted folder that undo didn't know about.
 - **Undo can be retried.** Items that are in use stay in the batch; close them and run undo again.
-- **System folders are refused:** drive roots, Windows, Program Files, ProgramData, AppData, `C:\Users` and the
-  profile folder itself (pick Downloads, Desktop, Documents, …).
+- **System folders are refused:** drive roots, Windows, Program Files, ProgramData, AppData (and the folders above
+  it), `C:\Users` and any user profile folder itself (pick Downloads, Desktop, Documents, …).
 - **Folder lock held by the OS:** released automatically if the app crashes or is killed — no stale "Folder is
   busy". Closing the app during a task asks to stop it first; items already moved stay undoable.
 
@@ -28,7 +28,10 @@
 - Tab only reaches controls on the visible page (hidden pages could be focused and activated before).
 - Duplicates that changed after the check are not moved; results are cleared after organize, undo or watch.
 - Changing the target folder stops automation for the old folder.
-- 153 tests; each fix has a regression test that fails on 3.10.
+- Closing during a task stops it first, then still asks about unsaved rule changes.
+- A failed move only removes the folders it created itself, never your existing empty folders.
+- A folder icon you change in Explorer after labelling is kept.
+- 159 tests; each fix has a regression test that fails on 3.10. Fixes were checked by an independent review.
 
 ## 3.10 — release readiness (P2 of the re-audit)
 - **One process per folder:** a lock in `%APPDATA%` stops the GUI, the CLI and watch mode from moving files in
