@@ -211,6 +211,7 @@ def test_only_active_page_is_reachable_by_tab(app, target):
     app.show_page("organize")
     pump(app, 0.1)
     assert all(not f.winfo_ismapped() for k, f in app.pages.items() if k != "organize")
+    app.root.tk.call("auto_load", "tk_focusNext")  # Tk-proc yang di-autoload; di Windows belum termuat sebelum Tab pertama
     w, seen = app.root, set()
     for _ in range(80):
         w = w.tk_focusNext()
