@@ -45,5 +45,13 @@ Name: "{userdesktop}\Folder Organizer"; Filename: "{app}\Folder Organizer.exe"; 
 
 [Run]
 Filename: "{app}\Folder Organizer.exe"; Description: "{cm:LaunchProgram,Folder Organizer}"; Flags: nowait postinstall skipifsilent
+; In-app update runs the installer with /SILENT /RELAUNCH=1: reopen the app when done.
+Filename: "{app}\Folder Organizer.exe"; Parameters: "--updated"; Flags: nowait; Check: ShouldRelaunch
 
 ; Uninstall keeps user data (%APPDATA%\FolderOrganizer: settings, undo history, logs) and the user's rules.yaml.
+
+[Code]
+function ShouldRelaunch: Boolean;
+begin
+  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+end;

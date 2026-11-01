@@ -19,7 +19,7 @@ a = Analysis(
     [str(ROOT / "organizer_gui.pyw")],
     pathex=[str(ROOT)],
     datas=datas,
-    hiddenimports=["gui.app", "gui.shell", "gui.widgets", "gui.common"]
+    hiddenimports=["gui.app", "gui.shell", "gui.widgets", "gui.common", "gui.updater"]
                   + [f"gui.pages.{m}" for m in ("overview", "organize", "dupes", "history", "labels", "auto",
                                                  "rules", "rule_editor", "label_editor", "settings")]
                   + ["updates", "rules_io", "i18n"],

@@ -18,10 +18,11 @@ from gui.pages.rule_editor import RuleEditor
 from gui.pages.label_editor import LabelEditor
 from gui.pages.settings import SettingsPage
 from gui.shell import AppShell
+from gui.updater import UpdaterMixin
 
 
 class App(OverviewPage, OrganizePage, DuplicatesPage, HistoryPage, LabelsPage, AutomationPage, RulesPage, RuleEditor, LabelEditor,
-          SettingsPage, AppShell):
+          SettingsPage, UpdaterMixin, AppShell):
     pass
 
 

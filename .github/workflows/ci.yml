@@ -108,6 +108,21 @@ jobs:
           if ($p.ExitCode -ne 0) { Get-Content "$env:APPDATA\FolderOrganizer\logs\app.log" -Tail 20; throw "installed app self-test failed" }
           if (-not (Test-Path "$dir\rules.yaml")) { throw "rules.yaml was not created on first run" }
           Get-Content "$env:APPDATA\FolderOrganizer\logs\app.log" -Tail 3
+          # In-app update path: app running, installer run with the updater's arguments over it
+          Add-Content "$dir\rules.yaml" "# user edit marker"
+          $app = Start-Process "$dir\Folder Organizer.exe" -PassThru
+          Start-Sleep -Seconds 6
+          $log = Join-Path $env:RUNNER_TEMP "update-install.log"
+          $p = Start-Process $setup.FullName -ArgumentList "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH=1", "/DIR=`"$dir`"", "/LOG=`"$log`"" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { Get-Content $log -Tail 40; throw "update install exited with $($p.ExitCode)" }
+          Start-Sleep -Seconds 6
+          $procs = @(Get-CimInstance Win32_Process -Filter "Name='Folder Organizer.exe'")
+          $procs | ForEach-Object { "running: $($_.ProcessId) $($_.CommandLine)" }
+          $relaunched = $procs | Where-Object { $_.CommandLine -like '*--updated*' }
+          $procs | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+          if (-not $relaunched) { Get-Content $log -Tail 40; throw "app was not relaunched after update" }
+          if (-not (Select-String -Path "$dir\rules.yaml" -Pattern "user edit marker" -Quiet)) { throw "user rules.yaml overwritten by update" }
+          Start-Sleep -Seconds 2
           $p = Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw "uninstaller exited with $($p.ExitCode)" }
       - name: Portable zip

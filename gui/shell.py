@@ -58,6 +58,8 @@ class AppShell:
         self._bind_shortcuts()
         root.report_callback_exception = self._on_tk_error
         self._poll_id = root.after(80, self._poll)
+        if hasattr(self, "_init_updater"):
+            self._init_updater()
 
     # ── theme ──
     @property

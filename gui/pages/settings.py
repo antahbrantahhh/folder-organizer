@@ -1,13 +1,10 @@
 """Halaman Settings."""
 
-import webbrowser
-
 import tkinter as tk
 from tkinter import ttk
 
 import updates
-from gui.common import (T, LANG_NAMES, HERE, VERSION, RULES_PATH, UserError, open_path, org)
-from gui.widgets import Dialog
+from gui.common import (T, LANG_NAMES, HERE, VERSION, RULES_PATH, open_path, org)
 from gui.widgets import ScrollFrame
 
 
@@ -55,6 +52,14 @@ class SettingsPage:
         c = card(T("set_updates"))
         ttk.Label(c, text=T("set_updates_hint", repo=updates.REPO), style="Caption.TLabel", wraplength=640,
                   justify="left").pack(anchor="w", pady=(0, 6))
+        self.auto_upd_var = tk.BooleanVar(value=self.settings.get("auto_update_check", True))
+
+        def set_auto():
+            self.settings["auto_update_check"] = bool(self.auto_upd_var.get())
+            self._save_settings()
+
+        ttk.Checkbutton(c, text=T("set_auto_update"), variable=self.auto_upd_var, command=set_auto).pack(
+            anchor="w", pady=(0, 8))
         ttk.Button(c, text=T("btn_check_updates"), command=self.check_updates).pack(anchor="w")
 
         c = card(T("set_about"))
@@ -70,25 +75,6 @@ class SettingsPage:
         ttk.Button(row, text=T("btn_open_log_folder"),
                    command=lambda: (org.log_dir().mkdir(parents=True, exist_ok=True), open_path(org.log_dir()))
                    ).pack(side="left", padx=8)
-
-    def check_updates(self):
-        def job():
-            try:
-                return updates.check(VERSION)
-            except updates.UpdateError as e:
-                key = {"offline": "upd_offline", "no_release": "upd_no_release"}.get(str(e), "upd_failed")
-                raise UserError(T(key, err=e))
-
-        def done(info):
-            if not info["newer"]:
-                self.infobar.show("success", T("upd_latest", v=VERSION), timeout=6000)
-                return
-            notes = info["notes"].splitlines()[:30] or None
-            if Dialog(self, T("upd_available_title", v=info["version"]), T("upd_available_msg", cur=VERSION),
-                      [("open", T("btn_download"), True), (None, T("btn_later"), False)], notes).result == "open":
-                webbrowser.open(info["url"])
-
-        self.run_bg(T("task_updates"), job, done, cancellable=False)
 
     def _rebuild(self):
         if self.busy:
