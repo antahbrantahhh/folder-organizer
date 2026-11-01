@@ -44,7 +44,7 @@ def app(tmp_path, monkeypatch, tkroot):
         w.destroy()
     a = gui.app.App(tkroot)
     yield a
-    a.watch_stop.set()
+    a.teardown()  # timer/handler instance ini tidak boleh jalan di test berikutnya (root dipakai bersama)
     for w in tkroot.winfo_children():
         w.destroy()
 

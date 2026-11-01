@@ -61,7 +61,7 @@ class AppShell:
         self._dpi = self._window_dpi()
         if self._dpi:
             self._apply_dpi(self._dpi, rebuild=abs(self._dpi - self.root.winfo_fpixels("1i")) > 1)
-        root.bind("<Configure>", self._on_root_configure, add="+")
+        self._configure_bind = root.bind("<Configure>", self._on_root_configure, add="+")
         if hasattr(self, "_init_updater"):
             self._init_updater()
 
@@ -607,12 +607,24 @@ class AppShell:
     def _shutdown(self):
         self.watch_stop.set()
         self._save_settings()
+        self.teardown()
+        self.root.destroy()
+
+    def teardown(self):
+        """Hentikan semua timer & handler milik instance ini (dipakai saat menutup, dan oleh test)."""
+        self.watch_stop.set()
         for job in ("_poll_id", "_update_job", "_dpi_job"):
             try:
                 self.root.after_cancel(getattr(self, job))
             except (tk.TclError, AttributeError, ValueError, TypeError):
                 pass
-        self.root.destroy()
+            setattr(self, job, None)
+        try:
+            self.root.unbind("<Configure>", self._configure_bind)
+        except (tk.TclError, AttributeError):
+            pass
+        if getattr(self, "_labels_cancel", None):
+            self._labels_cancel.set()
 
     # ── target ──
     def _pick_folder(self):
