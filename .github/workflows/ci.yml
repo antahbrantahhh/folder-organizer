@@ -23,8 +23,8 @@ jobs:
             python: "3.11"     # minimum supported version (3.10 is end-of-life)
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -52,8 +52,8 @@ jobs:
       SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
       SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -95,7 +95,7 @@ jobs:
       - name: Portable zip
         shell: pwsh
         run: Compress-Archive -Path "dist\Folder Organizer" -DestinationPath "FolderOrganizer-${{ steps.ver.outputs.v }}-portable.zip"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: folder-organizer-${{ steps.ver.outputs.v }}
           path: |
@@ -109,7 +109,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           path: out
           merge-multiple: true
