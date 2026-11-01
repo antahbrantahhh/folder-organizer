@@ -1,5 +1,15 @@
 # Changelog
 
+## 3.12.2 — no freeze on theme change, clearer protected folders
+- **Fixed freeze:** changing theme or language rebuilt every page and searched the target folder for folder labels on
+  the UI thread (with `C:\` as target that could take minutes: "Not Responding"). The search now runs in the
+  background only when Folder labels is opened, is capped, and is skipped for protected folders.
+  Theme switch on a 22,000-folder tree: 3.8 s → 0.1 s.
+- **Protected folders** (drive roots, Windows, Program Files, AppData, profiles) are a warning, not an error:
+  - choosing one asks right away: *Choose another folder* or *Keep (scan only)*;
+  - the target bar shows "Protected folder — scan only";
+  - scanning still works; Organize/labels explain why they're disabled, with a *Change folder…* button.
+
 ## 3.12.1 — cleaner update dialog
 - Release notes in the update dialog are shown as clean text: headings in bold, bullets with a hanging indent,
   no raw Markdown (`**`, `*`, links), words are no longer split across lines, and long notes scroll.

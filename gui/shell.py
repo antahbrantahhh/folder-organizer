@@ -273,6 +273,10 @@ class AppShell:
         self.target_label = ttk.Label(col, text=self.folder or T("target_none"),
                                       font=(f.text, 10, "bold" if self.folder else "normal"))
         self.target_label.pack(anchor="w")
+        reason = org.unsafe_target(Path(self.folder)) if self.folder else None
+        if reason:  # tetap terlihat: folder ini hanya bisa di-scan
+            ttk.Label(col, text="⚠  " + T("unsafe_badge"), style="Caption.TLabel",
+                      foreground=p["warning"][1]).pack(anchor="w", pady=(2, 0))
         ttk.Button(bar, text=T("btn_open_explorer"), command=self._open_target).pack(side="right")
         ttk.Button(bar, text=T("btn_change_folder") if self.folder else T("btn_choose_folder"),
                    command=self._pick_folder, style="Accent.TButton" if (sv_ttk and not self.folder) else "TButton"
@@ -364,7 +368,7 @@ class AppShell:
         def worker():
             try:
                 res, err = fn(), None
-            except (UserError, org.AccessBlocked, org.Cancelled, org.FolderBusy) as e:
+            except (UserError, org.AccessBlocked, org.Cancelled, org.FolderBusy, org.UnsafeTarget) as e:
                 res, err = None, e
             except org.ConfigError as e:
                 res, err = None, UserError(str(e.code))
@@ -466,6 +470,8 @@ class AppShell:
             self.show_blocked(err)
         elif isinstance(err, org.FolderBusy):
             self.infobar.show("warning", T("ib_busy_title"), str(err))
+        elif isinstance(err, org.UnsafeTarget):  # pengaman yang disengaja, bukan error
+            self.show_unsafe(err.reason)
         elif isinstance(err, RuntimeError):  # error tak terduga: sudah dicatat di log
             self.infobar.show("error", T("err_title"), str(err).split("\n\n")[0] + ". " + T("err_unexpected_msg"),
                               action=(T("btn_open_log"), lambda: open_path(org.log_dir() / org.LOG_FILE_NAME)))
@@ -616,10 +622,20 @@ class AppShell:
         if str(Path(d)) != self.folder and getattr(self, "watch_active", False):
             self.watch_active = False  # watch tidak boleh terus merapikan folder lama
             self.watch_stop.set()
+        reason = org.unsafe_target(Path(d))
+        if reason:  # beri tahu langsung saat memilih, bukan baru saat Organize
+            r = Dialog(self, T("unsafe_title"), T("unsafe_msg", path=Path(d), reason=reason),
+                       [("pick", T("btn_pick_other"), True), ("keep", T("btn_keep_scan_only"), False)]).result
+            if r == "pick":
+                return self._pick_folder()
         self.folder = str(Path(d))
         self.plan, self.dup_groups, self.scan_result, self.dup_root = [], [], None, None
         self._save_settings()
         self._build_shell()
+
+    def show_unsafe(self, reason):
+        self.infobar.show("warning", T("unsafe_title"), T("unsafe_msg", path=self.folder, reason=reason),
+                          action=(T("btn_change_folder"), self._pick_folder))
 
     def _open_target(self):
         try:

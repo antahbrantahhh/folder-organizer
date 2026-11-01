@@ -1,5 +1,7 @@
 """Halaman Labels."""
 
+import threading
+
 import tkinter as tk
 from tkinter import ttk
 
@@ -34,12 +36,49 @@ class LabelsPage:
         TreeTooltip(self, self.label_tree, ("folder", "desc"))
         self.lbl_summary = ttk.Label(f, text="", style="Muted.TLabel")
         self.lbl_summary.pack(anchor="w", pady=(8, 0))
-        self.refresh_labels()
+        self._labels_managed = None  # hasil pencarian label (background); None = belum dicari
+        if self.page == "labels":
+            self.refresh_labels()
 
     def _on_show_labels(self):
         self.refresh_labels()
 
     def refresh_labels(self):
+        """Isi tabel langsung dari aturan; label buatan app di disk dicari di thread terpisah (bisa lama untuk
+        folder besar) lalu statusnya diperbarui. UI tidak pernah menunggu pencarian ini."""
+        try:
+            root = self._target()
+        except UserError:
+            root = None
+        if root is not None and not org.unsafe_target(root):
+            self._labels_gen = getattr(self, "_labels_gen", 0) + 1
+            gen, cancel = self._labels_gen, threading.Event()
+            old = getattr(self, "_labels_cancel", None)
+            if old:
+                old.set()  # pencarian sebelumnya (folder/aturan lama) tidak relevan lagi
+            self._labels_cancel = cancel
+
+            def worker():
+                try:
+                    found = set(org.find_managed_labels(root, cancel=cancel))
+                except (OSError, org.Cancelled):
+                    return
+                self.q.put(lambda: self._labels_found(gen, found))
+
+            threading.Thread(target=worker, daemon=True, name="find-labels").start()
+        self._render_labels(root, None if root is not None and not org.unsafe_target(root) else set())
+
+    def _labels_found(self, gen, found):
+        if gen != getattr(self, "_labels_gen", 0):
+            return
+        try:
+            root = self._target()
+        except UserError:
+            return
+        self._render_labels(root, found)
+
+    def _render_labels(self, root, managed):
+        """managed=None → pencarian masih berjalan (status "Checking…")."""
         try:
             t = self.label_tree
         except AttributeError:
@@ -51,11 +90,8 @@ class LabelsPage:
             self.infobar.show("error", T("err_title"), str(e))
             return
         entries = org.folder_info_entries(cfg)
-        try:
-            root = self._target()
-            managed = set(org.find_managed_labels(root))
-        except (UserError, OSError):
-            root, managed = None, set()
+        checking = managed is None
+        managed = managed or set()
         known = {p.replace("\\", "/").strip("/") for p, _, _ in entries}
         orphans = sorted(managed - known, key=str.lower)
         if not entries and not orphans:
@@ -75,6 +111,8 @@ class LabelsPage:
             elif not (root / rel_path).is_dir():
                 status, labeled = T("lbl_missing"), False
                 self.missing_labels.append(rel_path)
+            elif checking:
+                status, labeled = T("lbl_checking"), False
             elif norm in managed:
                 status, labeled = T("lbl_labeled"), True
             else:

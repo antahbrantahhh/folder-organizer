@@ -100,6 +100,14 @@ class ConfigError(SystemExit):
     """Aturan tidak valid. Turunan SystemExit supaya CLI otomatis keluar dengan pesan; e.code = pesan."""
 
 
+class UnsafeTarget(ConfigError):
+    """Folder target adalah folder sistem/aplikasi/profil: boleh di-scan (read-only), tidak boleh diubah."""
+
+    def __init__(self, path, reason):
+        super().__init__(T("e_unsafe_target", path=path, reason=reason))
+        self.path, self.reason = path, reason
+
+
 class Cancelled(Exception):
     """Operasi dihentikan user (tombol Cancel / Esc)."""
 
@@ -338,7 +346,7 @@ def unsafe_target(root: Path):
 def check_target(root: Path):
     reason = unsafe_target(root)
     if reason:
-        raise ConfigError(T("e_unsafe_target", path=root, reason=reason))
+        raise UnsafeTarget(root, reason)
 
 
 def ensure_writable(root: Path):
@@ -1499,18 +1507,27 @@ def remove_folder_label(folder: Path) -> bool:
     return changed
 
 
-def find_managed_labels(root: Path, max_depth: int = 4, cancel=None) -> list:
+LABEL_SCAN_CAP = 20_000  # folder; lebih dari ini berhenti mencari (label app hanya ada di level atas)
+
+
+def find_managed_labels(root: Path, max_depth: int = 4, cancel=None, cap: int = None) -> list:
     """Path relatif (pakai '/') semua folder yang punya label buatan app, sampai kedalaman max_depth."""
     out, root = [], Path(root)
-    for dirpath, dirnames, filenames in os.walk(root):
-        check_cancel(cancel)
-        dp = Path(dirpath)
-        depth = len(dp.relative_to(root).parts)
+    base = len(str(root).rstrip("\\/"))
+    cap = cap or LABEL_SCAN_CAP
+    for n, (dirpath, dirnames, filenames) in enumerate(os.walk(root)):
+        if n % 200 == 0:
+            check_cancel(cancel)
+        if n >= cap:
+            log.info("label search stopped after %d folders in %s", n, root)
+            break
+        relp = dirpath[base:].strip("\\/").replace("\\", "/")
+        depth = relp.count("/") + 1 if relp else 0
         dirnames[:] = [] if depth >= max_depth else [
             d for d in dirnames if d not in ALWAYS_EXCLUDE_DIRS and d not in SKIP_DEEP_DIRS
-            and not d.startswith(".") and not is_link_or_junction(dp / d)]
-        if dp != root and "desktop.ini" in {f.lower() for f in filenames} and is_managed_label(dp):
-            out.append(dp.relative_to(root).as_posix())
+            and not d.startswith(".") and not is_link_or_junction(Path(dirpath) / d)]
+        if relp and any(f.lower() == "desktop.ini" for f in filenames) and is_managed_label(Path(dirpath)):
+            out.append(relp)
     return sorted(out, key=str.lower)
 
 

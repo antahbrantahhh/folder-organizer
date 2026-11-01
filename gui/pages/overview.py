@@ -56,8 +56,9 @@ class OverviewPage:
         hint.pack(fill="x", pady=(12, 0))
         self.ov_hint = ttk.Label(hint, text="", style="Muted.TLabel")
         self.ov_hint.pack(side="left")
-        ttk.Button(hint, text=T("btn_view_plan"), command=lambda: (self.show_page("organize"), self.do_preview())
-                   ).pack(side="right")
+        self.ov_plan_btn = ttk.Button(hint, text=T("btn_view_plan"),
+                                      command=lambda: (self.show_page("organize"), self.do_preview()))
+        self.ov_plan_btn.pack(side="right")
         self._render_overview()
 
     def _render_overview(self):
@@ -93,7 +94,13 @@ class OverviewPage:
         self.big_tree.delete(*self.big_tree.get_children())
         for p, st in sorted(files, key=lambda x: -x[1].st_size)[:200]:
             self.big_tree.insert("", "end", values=(org.human(st.st_size), org.rel(root, p)))
-        self.ov_hint.configure(text=T("hint_plan", n=f"{r['plan']:,}") if r["plan"] else T("hint_clean"))
+        if r["plan"] is None:
+            self.ov_hint.configure(text="⚠  " + T("unsafe_hint"), foreground=self.pal["warning"][1])
+            self.ov_plan_btn.pack_forget()
+        else:
+            self.ov_hint.configure(text=T("hint_plan", n=f"{r['plan']:,}") if r["plan"] else T("hint_clean"),
+                                   foreground=self.pal["muted"])
+            self.ov_plan_btn.pack(side="right")
 
     def do_scan(self):
         prep = self._prep()
@@ -128,7 +135,10 @@ class OverviewPage:
 
     def _scan_plan(self, root, cfg, cancel):
         self.phase(T("task_plan"))
-        return len(org.build_plan(root, cfg, cancel=cancel, progress=self.files_progress()))
+        try:
+            return len(org.build_plan(root, cfg, cancel=cancel, progress=self.files_progress()))
+        except org.UnsafeTarget:
+            return None  # scan (read-only) tetap boleh; merapikan folder ini tidak
 
     def _reveal_rel(self, tree, col):
         sel = tree.focus()

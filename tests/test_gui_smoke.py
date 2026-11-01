@@ -395,3 +395,55 @@ def test_rules_edited_during_download_are_asked_before_install(app, target, monk
     app._install_update(tmp_path / "s.exe", {"version": "9", "asset": {}})
     assert asked == [1] and calls == []
     app.dirty = False
+
+
+def test_theme_switch_does_not_wait_for_label_search(app, target, monkeypatch):
+    import organizer as org
+    app.folder = str(target)
+    app._build_shell()
+    slow = lambda *a, **k: (time.sleep(2), [])[1]  # noqa: E731  (folder raksasa, mis. C:\)
+    monkeypatch.setattr(org, "find_managed_labels", slow)
+    for page in ("settings", "labels"):
+        app.show_page(page)
+        t = time.time()
+        app.theme_mode = "dark"
+        app._rebuild()
+        app.root.update()
+        assert time.time() - t < 1.0, page
+
+
+def test_label_status_fills_in_after_background_search(app, target):
+    import organizer as org
+    (target / "Projects").mkdir(exist_ok=True)
+    org.write_folder_label(target / "Projects", "Work")
+    app.folder = str(target)
+    app._build_shell()
+    app.show_page("labels")
+    for _ in range(50):
+        pump(app, 0.05)
+        statuses = {app.label_tree.item(i, "values")[0]: app.label_tree.item(i, "values")[2]
+                    for i in app.label_tree.get_children()}
+        if statuses.get("Projects") != org.T("lbl_checking"):
+            break
+    assert statuses.get("Projects") == org.T("lbl_labeled")
+
+
+def test_protected_folder_is_a_warning_with_scan_only(app, monkeypatch, tmp_path):
+    import organizer as org
+    prot = tmp_path / "Program Files"
+    prot.mkdir()
+    (prot / "a.pdf").write_text("x")
+    monkeypatch.setenv("ProgramFiles", str(prot))
+    app.folder = str(prot)
+    app._build_shell()
+    app.show_page("overview")
+    app.do_scan()
+    wait(app)
+    assert app.scan_result["plan"] is None and len(app.scan_result["files"]) == 1   # scan tetap jalan
+    assert not app.ov_plan_btn.winfo_ismapped()
+    shown = []
+    monkeypatch.setattr(app.infobar, "show", lambda kind, title, *a, **k: shown.append((kind, title)))
+    app.show_page("organize")
+    app.do_preview()
+    wait(app)
+    assert shown and shown[-1] == ("warning", org.T("unsafe_title"))
