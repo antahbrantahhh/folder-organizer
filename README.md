@@ -88,6 +88,8 @@ categories:                       # optional
   training_certs: {ext: [pdf], en: "Training certificates"}   # new category
 ```
 
+- **Recursive mode** leaves folders moved by folder rules (e.g. `_Archive/Folders/...`) intact, and `dest: "."`
+  keeps a file in its own subfolder.
 - **Your projects:** the folder rule *Known projects* is a disabled example. Put your project names in its
   `name_regex` and switch it on.
 - **Validation:** mistyped keys (with a suggestion), unknown placeholders, invalid numbers and destinations that
@@ -106,8 +108,13 @@ folder. Descriptions can be plain text or `{en: ..., id: ...}`; the app writes t
 labels that are no longer in the rules are marked "not in rules" so you can clean them up.
 
 ## Safety
+- **Moves never copy:** an item is renamed on the same drive or, if Windows refuses (file open, antivirus,
+  download in progress), reported as "in use" and left untouched. Undo can be retried for items that were in use.
+- **System folders are refused:** drive roots, Windows, Program Files, ProgramData, AppData, `C:\Users` and your
+  profile folder itself. Pick a folder such as Downloads, Desktop or Documents.
 - **One process per folder:** the GUI, the CLI and watch mode never move files in the same folder at the same
-  time (lock in `%APPDATA%`; a lock left by a crash is taken over automatically).
+  time. The lock is held by Windows and released automatically if the app crashes.
+- Folder labels never overwrite your own `_README.txt` and keep existing custom folder icons.
 - Already-organized files (e.g. in `Notes/2026-09`) are not moved again when scanning subfolders.
 
 ## Data locations

@@ -2,7 +2,6 @@
 import copy
 import json
 import os
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -100,7 +99,7 @@ def test_crash_mid_batch_leaves_consistent_journal(target, monkeypatch):
     for i in range(5):
         touch(target / f"f{i}.pdf", str(i))
     moves = org.build_plan(target, c)
-    real, calls = shutil.move, {"n": 0}
+    real, calls = org.move_item, {"n": 0}
 
     def flaky(a, b):
         calls["n"] += 1
@@ -108,13 +107,13 @@ def test_crash_mid_batch_leaves_consistent_journal(target, monkeypatch):
             raise KeyboardInterrupt
         return real(a, b)
 
-    monkeypatch.setattr(org.shutil, "move", flaky)
+    monkeypatch.setattr(org, "move_item", flaky)
     with pytest.raises(KeyboardInterrupt):
         org.execute(target, moves, "apply")
-    monkeypatch.setattr(org.shutil, "move", real)
+    monkeypatch.setattr(org, "move_item", real)
     j = org.list_journals(target)[-1]
     assert len(org.read_journal(j)) == 2
-    assert org.undo_journal(target, j) == (2, 0)
+    assert org.undo_journal(target, j) == (2, 0, 0)
     assert len([p for p in target.iterdir() if p.is_file()]) == 5
 
 
@@ -321,7 +320,7 @@ def test_legacy_journal_still_listed_and_undoable(target):
         json.dumps({"src": str(target / "old.pdf"), "dst": str(moved)}) + "\n", encoding="utf-8")
     journals = org.list_journals(target)
     assert len(journals) == 1
-    assert org.undo_journal(target, journals[0]) == (1, 0)
+    assert org.undo_journal(target, journals[0]) == (1, 0, 0)
     assert (target / "old.pdf").exists()
 
 
@@ -453,7 +452,7 @@ def test_execute_cancel_keeps_partial_batch_undoable(target):
     ok, failed = org.execute(target, moves, "apply", cancel=Flag(after=2))
     assert ok == 2 and not failed
     j = org.list_journals(target)[-1]
-    assert org.undo_journal(target, j) == (2, 0)
+    assert org.undo_journal(target, j) == (2, 0, 0)
     assert len([p for p in target.iterdir() if p.is_file()]) == 6
 
 
@@ -549,9 +548,11 @@ def test_long_path_failure_gets_clear_message(target, monkeypatch):
     dst = target / ("x" * 250) / "a.pdf"
     monkeypatch.setattr(org.sys, "platform", "win32")
     monkeypatch.setattr(org, "_win_set_attrs", lambda *a, **k: None)
+    monkeypatch.setattr(org, "_os_lock", lambda fh: None)
+    monkeypatch.setattr(org, "_os_unlock", lambda fh: None)
     def boom(*a, **k):
         raise FileNotFoundError(3, "The system cannot find the path specified")
-    monkeypatch.setattr(org.shutil, "move", boom)
+    monkeypatch.setattr(org, "move_item", boom)
     ok, failed = org.execute(target, [org.Move(src, dst, "r")], "apply")
     assert ok == 0 and "260" in failed[0][1]
 
@@ -592,38 +593,55 @@ def test_batches_are_logged(target, tmp_path):
 
 # ───────── v3.10: lock per folder, pruning journal, label dwibahasa ─────────
 
+HOLD_LOCK = """
+import sys, time
+sys.path.insert(0, {root!r})
+import organizer as org
+from pathlib import Path
+with org.folder_lock(Path({target!r}), "watch"):
+    print("locked", flush=True)
+    time.sleep(30)
+"""
+
+
 def test_folder_lock_blocks_second_process(tmp_path):
+    import subprocess
     root = tmp_path / "t"
     root.mkdir()
-    lock = org.state_dir(root) / org.LOCK_NAME
-    lock.write_text(json.dumps({"pid": os.getpid() + 0, "purpose": "watch", "since": time.time()}), encoding="utf-8")
-    # PID sendiri dianggap hidup → seolah proses lain memegang lock
-    with pytest.raises(org.FolderBusy) as e:
-        with org.folder_lock(root, "apply"):
-            pass
-    assert "watch" in str(e.value)
-    assert lock.exists()  # lock milik proses lain tidak dihapus
+    env = dict(os.environ)
+    proc = subprocess.Popen([sys.executable, "-c", HOLD_LOCK.format(root=str(ROOT), target=str(root))],
+                            stdout=subprocess.PIPE, text=True, env=env)
+    try:
+        assert proc.stdout.readline().strip() == "locked"
+        with pytest.raises(org.FolderBusy) as e:
+            with org.folder_lock(root, "apply"):
+                pass
+        assert "watch" in str(e.value) and str(proc.pid) in str(e.value)
+    finally:
+        proc.kill()
+        proc.wait()
+    # proses mati (crash / ditutup paksa) → OS melepas lock, tidak perlu menunggu atau menebak dari PID
+    with org.folder_lock(root, "apply"):
+        pass
 
 
-def test_stale_lock_is_taken_over(tmp_path):
+def test_lock_info_left_by_crash_does_not_block(tmp_path):
     root = tmp_path / "t"
     root.mkdir()
     (root / "a.pdf").write_text("x")
-    lock = org.state_dir(root) / org.LOCK_NAME
-    lock.write_text(json.dumps({"pid": 999999999, "purpose": "apply", "since": time.time()}), encoding="utf-8")
+    (org.state_dir(root) / org.LOCK_INFO).write_text(json.dumps({"pid": 12345, "purpose": "apply"}), encoding="utf-8")
     moves = org.build_plan(root, org.prepare_config({"rules": [{"name": "d", "ext": ["pdf"], "dest": "D"}]}))
     ok, failed = org.execute(root, moves, "apply")
-    assert ok == 1 and not lock.exists()
+    assert ok == 1 and not (org.state_dir(root) / org.LOCK_INFO).exists()
 
 
-def test_old_lock_is_stale_even_if_pid_alive(tmp_path):
+def test_lock_is_exclusive_within_one_process(tmp_path):
     root = tmp_path / "t"
     root.mkdir()
-    lock = org.state_dir(root) / org.LOCK_NAME
-    lock.write_text(json.dumps({"pid": os.getpid(), "since": time.time() - org.LOCK_STALE_SECS - 10}), encoding="utf-8")
-    with org.folder_lock(root, "apply"):
-        assert json.loads(lock.read_text())["purpose"] == "apply"
-    assert not lock.exists()
+    with org.folder_lock(root, "watch"):
+        with pytest.raises(org.FolderBusy):
+            with org.folder_lock(root, "apply"):
+                pass
 
 
 def test_prune_journals_keeps_recent_and_minimum(tmp_path):

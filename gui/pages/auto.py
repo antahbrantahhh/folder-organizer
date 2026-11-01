@@ -84,12 +84,23 @@ class AutomationPage:
                     ok, failed = org.execute(root, moves, "watch")
                     names = ", ".join(m.src.name for m in moves[:3]) + (" …" if len(moves) > 3 else "")
                     msg = T("log_moved", n=ok, names=names) + (T("log_failed", n=len(failed)) if failed else "")
-                    self.q.put(lambda m=msg: (self._log(m), self.refresh_history()))
+                    self.q.put(lambda m=msg: (self._log(m), self._after_watch_batch()))
             except org.FolderBusy:
                 self.q.put(lambda: self._log(T("log_busy")))
             except BaseException as e:  # noqa
                 self.q.put(lambda m=str(e): self._log(T("log_error", msg=m)))
             stop.wait(interval)
+
+    def _after_watch_batch(self):
+        """File sudah dipindah watch: rencana & hasil cek duplikat yang lama tidak berlaku lagi."""
+        self.plan, self._plan_previewed, self.scan_result = [], False, None
+        self.dup_groups, self.dup_root = [], None
+        for render in (self._render_plan, self._render_overview, self._render_dupes):
+            try:
+                render()
+            except (AttributeError, tk.TclError):
+                pass
+        self.refresh_history()
 
     def _log(self, msg):
         row = (datetime.now().strftime("%H:%M:%S"), msg)

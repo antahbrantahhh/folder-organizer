@@ -56,8 +56,13 @@ Deskripsi ditulis ke `desktop.ini` (tooltip di Explorer) dan `_README.txt`. Nila
 `{en: ..., id: ...}`; app menulis bahasa yang sedang dipakai, dan editor label hanya mengubah bahasa aktif.
 
 ## Keamanan & data
+- **Tidak pernah copy:** file/folder di-rename di drive yang sama. Kalau Windows menolak (file sedang dibuka,
+  antivirus, download belum selesai), item dilaporkan "sedang dipakai" dan tidak disentuh. Undo bisa diulang.
+- **Folder sistem ditolak:** root drive, Windows, Program Files, ProgramData, AppData, `C:\Users`, dan folder profil
+  itu sendiri. Pilih folder seperti Downloads, Desktop, atau Documents.
 - **Satu proses per folder:** GUI, CLI, dan mode watch tidak pernah memindahkan file di folder yang sama
-  bersamaan. Lock sisa crash diambil alih otomatis.
+  bersamaan. Lock dipegang Windows dan lepas otomatis kalau app crash.
+- Label folder tidak menimpa `_README.txt` milik lu dan tidak menghapus ikon folder custom.
 - Riwayat undo di `%APPDATA%\FolderOrganizer\state\`, disimpan 90 hari (Settings → History); 20 batch terbaru
   selalu disimpan.
 - Log: `%APPDATA%\FolderOrganizer\logs\app.log`.

@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import csv
 import difflib
+import errno
 import fnmatch
 import hashlib
 import json
@@ -23,9 +24,9 @@ import logging
 import logging.handlers
 import os
 import re
-import shutil
 import string
 import sys
+import tempfile
 import time
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -222,32 +223,31 @@ class FolderBusy(Exception):
         self.root, self.info = root, info
 
 
-LOCK_NAME = "lock.json"
-LOCK_STALE_SECS = 6 * 3600  # lock lebih tua dari ini dianggap sisa crash
+LOCK_NAME = "folder.lock"     # dikunci OS selama proses memindahkan file; lepas otomatis kalau proses mati
+LOCK_INFO = "lock.json"       # siapa yang memegang lock (PID, tujuan), hanya untuk pesan ke user
 
 
-def pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if pid == os.getpid():
-        return True
+def _os_lock(fh):
     if sys.platform == "win32":
-        import ctypes
-        k32 = ctypes.windll.kernel32
-        handle = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return False
-        code = ctypes.c_ulong()
-        ok = k32.GetExitCodeProcess(handle, ctypes.byref(code))
-        k32.CloseHandle(handle)
-        return bool(ok) and code.value == 259  # STILL_ACTIVE
+        import msvcrt
+        fh.seek(0)
+        msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)  # OSError kalau sudah dikunci handle lain
+    else:
+        import fcntl
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _os_unlock(fh):
     try:
-        os.kill(pid, 0)
-        return True
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
+        if sys.platform == "win32":
+            import msvcrt
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
 
 
 def _read_lock(path: Path) -> dict:
@@ -260,29 +260,28 @@ def _read_lock(path: Path) -> dict:
 @contextlib.contextmanager
 def folder_lock(root: Path, purpose: str):
     """Lock per folder target supaya dua proses (mis. GUI + CLI watch) tidak memindahkan file bersamaan.
-    Lock dari proses yang sudah mati atau lebih tua dari 6 jam diambil alih."""
-    path = state_dir(root) / LOCK_NAME
-    info = {"pid": os.getpid(), "purpose": purpose, "since": time.time()}
-    for attempt in (0, 1):
-        try:
-            fd = os.open(str(path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(info, f)
-            break
-        except FileExistsError:
-            other = _read_lock(path)
-            stale = (not pid_alive(int(other.get("pid", 0) or 0))
-                     or time.time() - float(other.get("since", 0) or 0) > LOCK_STALE_SECS)
-            if stale and attempt == 0:
-                log.warning("removing stale lock %s: %s", path, other)
-                path.unlink(missing_ok=True)
-                continue
-            raise FolderBusy(root, other)
+    Memakai lock OS pada handle yang terbuka: kalau proses crash atau ditutup paksa, OS melepasnya sendiri,
+    jadi tidak ada lock basi yang perlu ditebak dari PID."""
+    state = state_dir(root)
+    fh = open(state / LOCK_NAME, "a+b")
+    try:
+        _os_lock(fh)
+    except OSError:
+        fh.close()
+        raise FolderBusy(root, _read_lock(state / LOCK_INFO))
+    info = state / LOCK_INFO
+    try:
+        tmp = info.with_name(info.name + f".{os.getpid()}.tmp")
+        tmp.write_text(json.dumps({"pid": os.getpid(), "purpose": purpose, "since": time.time()}), encoding="utf-8")
+        tmp.replace(info)
+    except OSError:
+        pass
     try:
         yield
     finally:
-        if _read_lock(path).get("pid") == os.getpid():
-            path.unlink(missing_ok=True)
+        info.unlink(missing_ok=True)
+        _os_unlock(fh)
+        fh.close()
 
 
 def prune_journals(root: Path, keep_days: int = 90, keep_min: int = 20) -> int:
@@ -308,6 +307,35 @@ def prune_journals(root: Path, keep_days: int = 90, keep_min: int = 20) -> int:
     if removed:
         log.info("pruned %d journals older than %d days in %s", removed, keep_days, root)
     return removed
+
+
+def unsafe_target(root: Path):
+    """Alasan folder ini tidak boleh dirapikan (folder sistem/aplikasi/root profil), atau None."""
+    r = Path(root).resolve()
+    if r == Path(r.anchor):
+        return T("e_unsafe_drive_root")
+    temp = Path(tempfile.gettempdir()).resolve()  # %LOCALAPPDATA%\Temp: bukan data aplikasi, boleh
+    in_temp = r == temp or temp in r.parents
+    for key in ("SystemRoot", "windir", "ProgramFiles", "ProgramFiles(x86)", "ProgramW6432", "ProgramData",
+                "APPDATA", "LOCALAPPDATA"):
+        d = os.environ.get(key)
+        if not d:
+            continue
+        d = Path(d).resolve()
+        if (r == d or d in r.parents) and not (in_temp and key in ("APPDATA", "LOCALAPPDATA")):
+            return T("e_unsafe_system", path=d)
+    exact = [os.environ.get("USERPROFILE"), str(Path.home())]
+    if any(e and r == Path(e).resolve() for e in exact):
+        return T("e_unsafe_profile")
+    if any(e and r == Path(e).resolve().parent for e in exact):  # C:\Users (semua profil)
+        return T("e_unsafe_system", path=r)
+    return None
+
+
+def check_target(root: Path):
+    reason = unsafe_target(root)
+    if reason:
+        raise ConfigError(T("e_unsafe_target", path=root, reason=reason))
 
 
 def ensure_writable(root: Path):
@@ -349,7 +377,9 @@ def is_hidden_system(st) -> bool:
 
 
 def file_date(p: Path, st) -> datetime:
-    if HAS_PIL and ext_of(p) in EXIF_EXT:
+    # foto OneDrive yang belum ada di disk: dibuka = di-download → pakai tanggal file saja
+    cloud_only = getattr(st, "st_file_attributes", 0) & WIN_CLOUD_NOT_LOCAL
+    if HAS_PIL and ext_of(p) in EXIF_EXT and not cloud_only:
         try:
             with Image.open(p) as img:
                 raw = img.getexif().get(36867) or img.getexif().get(306)  # DateTimeOriginal / DateTime
@@ -583,6 +613,27 @@ def _compile_rule(r: dict, kind: str, i: int, library: dict):
             raise ConfigError(T("e_regex_invalid", name=r["name"], err=e))
 
 
+def label_path_error(rel_path) -> str:
+    """Path label harus relatif dan di dalam folder target."""
+    s = str(rel_path).replace("\\", "/").strip()
+    if not s:
+        return T("e_label_path_empty")
+    if s.startswith("/") or re.match(r"^[a-zA-Z]:", s) or ".." in s.split("/"):
+        return T("e_label_path_outside", path=s)
+    return None
+
+
+def _check_folder_info(info):
+    if info in (None, {}):
+        return
+    if not isinstance(info, dict):
+        raise ConfigError(T("e_must_be_mapping", key="folder_info"))
+    for k in info:
+        err = label_path_error(k)
+        if err:
+            raise ConfigError(f"folder_info: {err}")
+
+
 def prepare_config(cfg: dict) -> dict:
     """Validasi + kompilasi dict rules (dari file atau dari editor GUI). Mengubah dict in-place.
     Raise ConfigError dengan pesan yang bisa ditampilkan ke user."""
@@ -600,6 +651,12 @@ def prepare_config(cfg: dict) -> dict:
     dests = [r["dest"] for r in cfg["rules"] + cfg["folder_rules"]]
     dests += [d for d in (cfg["fallback_dest"], cfg["folder_fallback"]) if d]
     cfg["_managed_roots"] = {re.split(r"[\\/]", d.strip().strip("\\/"))[0].lower() for d in dests}
+    # Tujuan aturan folder (bagian statis, mis. "_archive/folders"): isinya folder utuh yang sudah dipindah,
+    # jangan dibongkar lagi oleh mode recursive.
+    fdests = [r["dest"] for r in cfg["folder_rules"] if r.get("enabled") is not False]
+    fdests += [cfg["folder_fallback"]] if cfg["folder_fallback"] else []
+    cfg["_folder_dest_roots"] = {d.split("{")[0].replace("\\", "/").strip().strip("/").lower() for d in fdests} - {"", "."}
+    _check_folder_info(cfg.get("folder_info"))
     # Umur folder dihitung dari aktivitas terakhir di dalamnya, hanya kalau memang dipakai
     cfg["_folder_deep_age"] = any(
         ("older_than_days" in r or "newer_than_days" in r or "{" in r["dest"]) for r in cfg["folder_rules"]
@@ -642,9 +699,11 @@ def render_dest(template: str, p: Path, st, is_dir: bool = False, date_format: s
 
 # ───────────────────────── scanning ─────────────────────────
 
-def _keep_subdir(root: Path, dp: Path, d: str, exclude: list, tool_dir: Path) -> bool:
+def _keep_subdir(root: Path, dp: Path, d: str, exclude: list, tool_dir: Path, skip_rel=()) -> bool:
     """Apakah subfolder d ikut di-scan (mode recursive)."""
     r = rel(root, dp / d).replace("\\", "/")
+    if r.lower() in skip_rel:
+        return False  # tujuan aturan folder: berisi folder utuh yang sudah dirapikan
     if (dp / d).resolve() == tool_dir:
         return False  # jangan sentuh folder organizer sendiri
     if d in ALWAYS_EXCLUDE_DIRS or any(fnmatch.fnmatch(r, pat) or fnmatch.fnmatch(d, pat) for pat in exclude):
@@ -652,10 +711,12 @@ def _keep_subdir(root: Path, dp: Path, d: str, exclude: list, tool_dir: Path) ->
     return not (is_protected_dir(d) or is_link_or_junction(dp / d))
 
 
-def _file_entry(root: Path, p: Path, exclude: list, stable_secs: int, now: float):
+def _file_entry(root: Path, p: Path, exclude: list, stable_secs: int, now: float, siblings=frozenset()):
     """stat file kalau file ini boleh diproses, selain itu None."""
     if p.name.lower() in ALWAYS_SKIP_FILES or ext_of(p) in PARTIAL_EXT:
         return None
+    if any(f"{p.name.lower()}.{e}" in siblings for e in PARTIAL_EXT):
+        return None  # placeholder download yang belum selesai (mis. Firefox: x.pdf + x.pdf.part)
     r = rel(root, p).replace("\\", "/")
     if any(fnmatch.fnmatch(r, pat) for pat in exclude):
         return None
@@ -668,12 +729,13 @@ def _file_entry(root: Path, p: Path, exclude: list, stable_secs: int, now: float
         return None
     if is_hidden_system(lst) or is_hidden_system(st):
         return None
-    if stable_secs and now - st.st_mtime < stable_secs:
-        return None  # file masih ditulis / baru di-download
+    if stable_secs and (now - st.st_mtime < stable_secs or st.st_size == 0):
+        return None  # file masih ditulis / baru di-download / placeholder kosong (mode watch)
     return st
 
 
-def iter_files(root: Path, recursive: bool, exclude: list, stable_secs: int = 0, cancel=None, progress=None):
+def iter_files(root: Path, recursive: bool, exclude: list, stable_secs: int = 0, cancel=None, progress=None,
+               skip_rel=()):
     """Yield (Path, stat). Skip folder sistem, file hidden/system, download yang belum selesai.
     progress(n, None) dipanggil berkala dengan jumlah file yang sudah ditemukan."""
     now, found, tool_dir = time.time(), 0, app_dir()
@@ -682,11 +744,13 @@ def iter_files(root: Path, recursive: bool, exclude: list, stable_secs: int = 0,
         if not recursive and dp != root:
             dirnames[:] = []
             continue
-        dirnames[:] = [d for d in dirnames if _keep_subdir(root, dp, d, exclude, tool_dir)] if recursive else []
+        dirnames[:] = ([d for d in dirnames if _keep_subdir(root, dp, d, exclude, tool_dir, skip_rel)]
+                       if recursive else [])
         check_cancel(cancel)
+        siblings = {f.lower() for f in filenames}
         for fn in filenames:
             p = dp / fn
-            st = _file_entry(root, p, exclude, stable_secs, now)
+            st = _file_entry(root, p, exclude, stable_secs, now, siblings)
             if st is None:
                 continue
             found += 1
@@ -856,10 +920,15 @@ def plan_folders(root: Path, cfg: dict, taken: set, now: float, cancel=None) -> 
 
 def build_plan(root: Path, cfg: dict, stable_secs: int = 0, include_folders: bool = True, cancel=None,
                progress=None) -> list:
+    check_target(root)
     now = time.time()
     taken = set()
     moves = plan_folders(root, cfg, taken, now, cancel=cancel) if include_folders else []
-    for p, st in iter_files(root, cfg["recursive"], cfg["exclude"], stable_secs, cancel=cancel, progress=progress):
+    moving_dirs = {m.src for m in moves}  # isi folder yang ikut dipindah tidak direncanakan terpisah
+    for p, st in iter_files(root, cfg["recursive"], cfg["exclude"], stable_secs, cancel=cancel, progress=progress,
+                            skip_rel=cfg.get("_folder_dest_roots", ())):
+        if moving_dirs and not moving_dirs.isdisjoint(p.parents):
+            continue
         rule = next((r for r in cfg["rules"] if rule_matches(r, p, st, now)), None)
         if rule:
             template, reason = rule["dest"], rule["name"]
@@ -867,6 +936,8 @@ def build_plan(root: Path, cfg: dict, stable_secs: int = 0, include_folders: boo
             template, reason = cfg["fallback_dest"], "(fallback)"
         else:
             continue
+        if template.strip().strip("/\\") in (".", ""):
+            continue  # dest "." = biarkan di tempat (juga di subfolder, bukan dipindah ke root)
         target_dir = _resolve_dest(root, render_dest(template, p, st, False, cfg["date_format"]), reason)
         if p.parent.resolve() == target_dir:
             continue  # sudah di tempat yang benar
@@ -903,6 +974,28 @@ def save_plan_csv(root: Path, moves: list) -> Path:
 
 # ───────────────────────── execution + journal ─────────────────────────
 
+def move_item(src: Path, dst: Path):
+    """Pindah = rename di volume yang sama. Sengaja TIDAK memakai shutil.move: kalau rename gagal (di Windows
+    mis. karena file sedang dibuka), shutil.move menyalin lalu menghapus — hasilnya duplikat atau folder setengah
+    terhapus yang tidak tercatat di journal. Di sini kegagalan dilaporkan dan file asli tidak disentuh."""
+    if os.path.lexists(dst):
+        raise FileExistsError(errno.EEXIST, T("e_dest_exists"), str(dst))
+    try:
+        os.rename(src, dst)
+    except OSError as e:
+        if e.errno == errno.EXDEV:
+            raise OSError(errno.EXDEV, T("e_cross_volume"), str(dst)) from e
+        raise
+
+
+def _move_error(e: OSError, dst: Path) -> str:
+    if sys.platform == "win32" and len(str(dst)) >= MAX_PATH_WIN:
+        return T("e_path_too_long", n=len(str(dst)))
+    if isinstance(e, PermissionError) or getattr(e, "winerror", None) in (5, 32, 33):
+        return T("e_in_use") + f" ({e.strerror or e})"
+    return e.strerror or str(e)
+
+
 def _new_journal(label: str, state: Path):
     """Buat file journal baru yang dijamin unik (mode 'x' tidak pernah menimpa)."""
     for _ in range(1000):
@@ -917,6 +1010,7 @@ def _new_journal(label: str, state: Path):
 def execute(root: Path, moves: list, label: str, progress=None, cancel=None) -> tuple:
     """Pindahkan semua item. Kalau cancel di-set, berhenti sebelum item berikutnya; yang sudah dipindah
     tetap tercatat di journal (bisa di-undo). Return (ok, failed)."""
+    check_target(root)
     ensure_writable(root)
     with folder_lock(root, label):
         return _execute_locked(root, moves, label, progress, cancel)
@@ -933,16 +1027,14 @@ def _execute_locked(root: Path, moves: list, label: str, progress, cancel) -> tu
                 m.dst.parent.mkdir(parents=True, exist_ok=True)
                 if m.dst.exists():  # bisa terjadi kalau folder berubah sejak plan
                     m.dst = unique_dest(m.dst, set(), is_dir=m.src.is_dir())
-                shutil.move(str(m.src), str(m.dst))
+                move_item(m.src, m.dst)
                 j.write(json.dumps({"src": str(m.src), "dst": str(m.dst)}, ensure_ascii=False) + "\n")
                 j.flush()
                 ok += 1
-            except (PermissionError, OSError) as e:
-                msg = str(e)
-                if sys.platform == "win32" and len(str(m.dst)) >= MAX_PATH_WIN:
-                    msg = T("e_path_too_long", n=len(str(m.dst)))
-                failed.append((m.src, msg))
+            except OSError as e:
+                failed.append((m.src, _move_error(e, m.dst)))
                 log.warning("move failed: %s -> %s: %s", m.src, m.dst, e)
+                remove_empty_parents(m.dst.parent, root)  # folder tujuan yang baru dibuat tapi tetap kosong
             if progress:
                 progress(ok + len(failed), len(moves))
     if ok == 0:
@@ -1015,19 +1107,31 @@ def undo_journal(root: Path, journal: Path) -> tuple:
 
 
 def _undo_locked(root: Path, journal: Path) -> tuple:
-    restored, skipped = 0, 0
+    """Return (restored, skipped, failed). Item yang gagal (mis. file sedang dibuka) tetap di journal,
+    jadi undo bisa diulang; journal baru ditandai selesai kalau tidak ada yang gagal."""
+    restored, skipped, retry = 0, 0, []
     for e in reversed(read_journal(journal)):
         src, dst = Path(e["src"]), Path(e["dst"])
         if not dst.exists() or src.exists():
             skipped += 1
             continue
-        src.parent.mkdir(parents=True, exist_ok=True)
-        shutil.move(str(dst), str(src))
+        try:
+            src.parent.mkdir(parents=True, exist_ok=True)
+            move_item(dst, src)
+        except OSError as err:
+            log.warning("undo failed: %s -> %s: %s", dst, src, err)
+            retry.append(e)
+            continue
         remove_empty_parents(dst.parent, root)
         restored += 1
-    journal.rename(journal.with_suffix(".undone"))
-    log.info("undo %s: %d restored, %d skipped", journal.name, restored, skipped)
-    return restored, skipped
+    if retry:
+        tmp = journal.with_name(journal.name + ".tmp")
+        tmp.write_text("".join(json.dumps(e, ensure_ascii=False) + "\n" for e in reversed(retry)), encoding="utf-8")
+        tmp.replace(journal)
+    else:
+        journal.rename(journal.with_suffix(".undone"))
+    log.info("undo %s: %d restored, %d skipped, %d failed", journal.name, restored, skipped, len(retry))
+    return restored, skipped, len(retry)
 
 
 def undo_last(root: Path):
@@ -1037,8 +1141,9 @@ def undo_last(root: Path):
         return
     last = active[-1]
     print(T("cli_undo_batch", name=last.name, n=len(read_journal(last))))
-    restored, skipped = undo_journal(root, last)
-    print(T("cli_restored", n=restored) + (T("cli_skipped", n=skipped) if skipped else ""))
+    restored, skipped, failed = undo_journal(root, last)
+    print(T("cli_restored", n=restored) + (T("cli_skipped", n=skipped) if skipped else "")
+          + (T("cli_undo_failed", n=failed) if failed else ""))
 
 
 # ───────────────────────── duplicates ─────────────────────────
@@ -1238,8 +1343,8 @@ def _read_ini(ini: Path) -> str:
 
 
 def _split_ini(text: str):
-    """Return (shell_lines, other_lines) tanpa InfoTip/IconResource dan tanpa section penanda app."""
-    section, shell, others = None, [], []
+    """Return (shell_lines, other_lines, ours). shell_lines tanpa InfoTip; ours = isi section penanda app."""
+    section, shell, others, ours = None, [], [], {}
     for raw in text.splitlines():
         s = raw.strip()
         if not s:
@@ -1250,38 +1355,68 @@ def _split_ini(text: str):
                 others.append(s)
             continue
         if section == "[.shellclassinfo]":
-            if not s.lower().startswith(("infotip=", "iconresource=")):
+            if not s.lower().startswith("infotip="):
                 shell.append(s)
-        elif section != LABEL_SECTION.lower():
+        elif section == LABEL_SECTION.lower():
+            k, _, v = s.partition("=")
+            ours[k.strip().lower()] = v.strip()
+        else:
             others.append(s)  # section lain (mis. [ViewState]) disalin apa adanya
-    return shell, others
+    return shell, others, ours
+
+
+def _is_icon(line: str) -> bool:
+    return line.lower().startswith("iconresource=")
+
+
+_README_FOOTER_RX = re.compile(r"^\(.*Folder Organizer.*\)$")
 
 
 def _readme_is_ours(path: Path) -> bool:
+    """_README.txt buatan app: baris terakhirnya footer app, mis. "(Generated by Folder Organizer. …)"."""
     try:
-        return path.is_file() and README_MARKER in path.read_text(encoding="utf-8-sig", errors="ignore")
+        if not path.is_file():
+            return False
+        lines = [x.strip() for x in path.read_text(encoding="utf-8-sig", errors="ignore").splitlines() if x.strip()]
     except OSError:
         return False
+    return bool(lines) and bool(_README_FOOTER_RX.match(lines[-1]))
 
 
-def write_folder_label(folder: Path, desc: str, icon: str = None, readme: bool = True):
+def write_folder_label(folder: Path, desc: str, icon: str = None, readme: bool = True) -> bool:
+    """Tulis tooltip (desktop.ini) + _README.txt. Ikon custom yang sudah ada tetap dipakai kecuali aturan
+    menentukan ikon (ikon lama disimpan untuk dikembalikan saat label dihapus). _README.txt milik user tidak
+    ditimpa. Return False kalau README dilewati karena milik user."""
     ini = folder / "desktop.ini"
-    lines = ["[.ShellClassInfo]", f"InfoTip={' '.join(desc.split())}"]
-    if icon:
-        lines.append(f"IconResource={icon}")
-    others = []
+    shell, others, ours = [], [], {}
     if ini.exists():
-        shell, others = _split_ini(_read_ini(ini))  # pertahankan baris lain (mis. LocalizedResourceName)
-        lines += shell
+        shell, others, ours = _split_ini(_read_ini(ini))  # pertahankan baris lain (mis. LocalizedResourceName)
         _win_set_attrs(ini, replace=0x80)  # NORMAL, supaya bisa ditimpa
-    lines += others + [LABEL_SECTION, "Managed=1"]
+    marker = [LABEL_SECTION, "Managed=1"]
+    if icon:
+        old_icon = next((x for x in shell if _is_icon(x)), None)
+        shell = [x for x in shell if not _is_icon(x)] + [f"IconResource={icon}"]
+        orig = ours.get("origiconresource") or (old_icon.partition("=")[2] if old_icon and not ours.get("seticon")
+                                                 else "")
+        marker += ["SetIcon=1"] + ([f"OrigIconResource={orig}"] if orig else [])
+    elif ours.get("seticon"):  # ikon dari aturan sebelumnya sudah tidak dipakai → kembalikan yang asli
+        shell = [x for x in shell if not _is_icon(x)]
+        if ours.get("origiconresource"):
+            shell.append(f"IconResource={ours['origiconresource']}")
+    lines = ["[.ShellClassInfo]", f"InfoTip={' '.join(desc.split())}"] + shell + others + marker
     ini.write_text("\r\n".join(lines) + "\r\n", encoding="utf-16")  # UTF-16 → aman untuk teks non-ASCII
     _win_set_attrs(ini, add=0x2 | 0x4)    # hidden + system
     _win_set_attrs(folder, add=0x1)       # flag read-only di folder = sinyal Explorer untuk baca desktop.ini
-    if readme:
-        (folder / README_NAME).write_text(
-            f"{folder.name}\r\n{'=' * len(folder.name)}\r\n\r\n{desc.strip()}\r\n\r\n{T('readme_footer')}\r\n",
-            encoding="utf-8-sig")
+    readme_path = folder / README_NAME
+    if not readme:
+        return True
+    if readme_path.exists() and not _readme_is_ours(readme_path):
+        log.info("label: keeping user's %s", readme_path)
+        return False
+    readme_path.write_text(
+        f"{folder.name}\r\n{'=' * len(folder.name)}\r\n\r\n{desc.strip()}\r\n\r\n{T('readme_footer')}\r\n",
+        encoding="utf-8-sig")
+    return True
 
 
 def is_managed_label(folder: Path) -> bool:
@@ -1302,7 +1437,11 @@ def remove_folder_label(folder: Path) -> bool:
     changed = False
     ini = folder / "desktop.ini"
     if is_managed_label(folder):
-        shell, others = _split_ini(_read_ini(ini))
+        shell, others, ours = _split_ini(_read_ini(ini))
+        if ours.get("seticon"):  # ikon dari app → kembalikan ikon asli (kalau ada)
+            shell = [x for x in shell if not _is_icon(x)]
+            if ours.get("origiconresource"):
+                shell.append(f"IconResource={ours['origiconresource']}")
         _win_set_attrs(ini, replace=0x80)
         if shell or others:
             ini.write_text("\r\n".join(["[.ShellClassInfo]"] + shell + others) + "\r\n", encoding="utf-16")
@@ -1349,18 +1488,35 @@ def folder_info_entries(cfg: dict) -> list:
     return out
 
 
+def _label_folder(root: Path, rel_path: str):
+    """Folder label di dalam root, atau None kalau path-nya keluar dari folder target."""
+    if label_path_error(rel_path):
+        return None
+    folder = root / rel_path
+    try:
+        if not _inside(root.resolve(), folder.resolve()):
+            return None
+    except OSError:
+        return None
+    return folder
+
+
 def apply_labels(root: Path, cfg: dict) -> list:
     """Return list of (rel_path, status, detail); status: ok | missing | error."""
+    check_target(root)
     readme = cfg.get("folder_info_readme", True)
     results = []
     for rel_path, desc, icon in folder_info_entries(cfg):
-        folder = root / rel_path
+        folder = _label_folder(root, rel_path)
+        if folder is None:
+            results.append((rel_path, "error", label_path_error(rel_path) or T("e_label_path_outside", path=rel_path)))
+            continue
         if not folder.is_dir():
             results.append((rel_path, "missing", T("e_label_missing")))
             continue
         try:
-            write_folder_label(folder, desc, icon, readme)
-            results.append((rel_path, "ok", desc))
+            readme_written = write_folder_label(folder, desc, icon, readme)
+            results.append((rel_path, "ok", desc if readme_written else f"{desc}  ({T('label_readme_kept')})"))
         except OSError as e:
             results.append((rel_path, "error", str(e)))
     return results
@@ -1368,9 +1524,13 @@ def apply_labels(root: Path, cfg: dict) -> list:
 
 def remove_labels(root: Path, rel_paths: list) -> list:
     """Return list of (rel_path, status, detail); status: ok | none | missing | error."""
+    check_target(root)
     results = []
     for rel_path in rel_paths:
-        folder = root / rel_path
+        folder = _label_folder(root, rel_path)
+        if folder is None:
+            results.append((rel_path, "error", T("e_label_path_outside", path=rel_path)))
+            continue
         if not folder.is_dir():
             results.append((rel_path, "missing", T("e_label_missing")))
             continue

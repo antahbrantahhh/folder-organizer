@@ -102,10 +102,15 @@ class HistoryPage:
         root = self._target()
 
         def done(res):
-            restored, skipped = res
+            restored, skipped, failed = res
             msg = T("ib_undo", n=f"{restored:,}") + ((" " + T("ib_undo_skipped", n=skipped)) if skipped else "")
-            self.infobar.show("warning" if skipped else "success", T("ib_moved_title"), msg, timeout=8000)
+            if failed:
+                msg += " " + T("ib_undo_failed", n=failed)
+            self.infobar.show("warning" if (skipped or failed) else "success", T("ib_moved_title"), msg,
+                              timeout=None if failed else 8000)
             self.plan, self._plan_previewed, self.scan_result = [], False, None
+            self.dup_groups, self.dup_root = [], None
+            self._render_dupes()
             self._render_plan()
             self._render_overview()
             self.refresh_history()

@@ -1,5 +1,35 @@
 # Changelog
 
+## 3.11 — robustness (P0 + P1 of the v3.10 audit)
+**Data safety**
+- **Moves never copy.** A move is a rename on the same drive. If Windows refuses it (file open in another app,
+  antivirus scan, download still being written) the item is reported as "in use" and left untouched. Previously
+  the fallback copied then deleted, which could leave a duplicate or a half-deleted folder that undo didn't know about.
+- **Undo can be retried.** Items that are in use stay in the batch; close them and run undo again.
+- **System folders are refused:** drive roots, Windows, Program Files, ProgramData, AppData, `C:\Users` and the
+  profile folder itself (pick Downloads, Desktop, Documents, …).
+- **Folder lock held by the OS:** released automatically if the app crashes or is killed — no stale "Folder is
+  busy". Closing the app during a task asks to stop it first; items already moved stay undoable.
+
+**Rules**
+- Recursive mode no longer takes apart folders already moved by folder rules (e.g. `_Archive/Folders/...`).
+- `dest: "."` keeps files in their own subfolder in recursive mode (previously moved to the root).
+- Files inside a folder that is itself being moved are no longer planned separately.
+- Download placeholders are skipped (`x.pdf` next to `x.pdf.part`); watch mode also skips empty files.
+- OneDrive photos that are not downloaded are no longer opened to read the EXIF date.
+
+**Folder labels**
+- Your own `_README.txt` is never overwritten or deleted.
+- An existing custom folder icon is kept; an icon set by a rule is reverted to the original on remove.
+- `folder_info` paths must be relative and inside the target folder.
+
+**App**
+- An error in one UI callback can no longer leave the app stuck on "busy".
+- Tab only reaches controls on the visible page (hidden pages could be focused and activated before).
+- Duplicates that changed after the check are not moved; results are cleared after organize, undo or watch.
+- Changing the target folder stops automation for the old folder.
+- 153 tests; each fix has a regression test that fails on 3.10.
+
 ## 3.10 — release readiness (P2 of the re-audit)
 - **One process per folder:** a lock in `%APPDATA%` stops the GUI, the CLI and watch mode from moving files in
   the same folder at the same time. A lock left behind by a crash is taken over automatically. Watch mode skips a

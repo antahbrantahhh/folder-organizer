@@ -57,7 +57,7 @@ class AppShell:
         self._build_shell()
         self._bind_shortcuts()
         root.report_callback_exception = self._on_tk_error
-        root.after(80, self._poll)
+        self._poll_id = root.after(80, self._poll)
 
     # ── theme ──
     @property
@@ -251,7 +251,13 @@ class AppShell:
 
     def show_page(self, key):
         self.page = key
-        self.pages[key].tkraise()
+        # Hanya halaman aktif yang di-grid. Dengan tkraise semua halaman tetap ter-map di belakang,
+        # sehingga Tab bisa memfokuskan (dan Space menjalankan) tombol di halaman yang tidak terlihat.
+        for k, f in self.pages.items():
+            if k == key:
+                f.grid()
+            else:
+                f.grid_remove()
         for k, it in self.nav_items.items():
             it.set_selected(k == key)
         hook = getattr(self, f"_on_show_{key}", None)
@@ -261,14 +267,25 @@ class AppShell:
     # ───────────────────────── infra ─────────────────────────
 
     def _poll(self):
+        """Jalankan callback dari thread worker di main thread. Satu callback yang error tidak boleh
+        menghentikan loop ini (kalau berhenti, semua tugas berikutnya tidak pernah selesai)."""
         try:
-            while True:
-                self.q.get_nowait()()
-        except queue.Empty:
-            pass
-        except tk.TclError:
-            pass
-        self.root.after(80, self._poll)
+            for _ in range(200):
+                try:
+                    cb = self.q.get_nowait()
+                except queue.Empty:
+                    break
+                try:
+                    cb()
+                except tk.TclError:
+                    pass  # widget sudah dihapus (mis. halaman dibangun ulang)
+                except Exception:  # noqa: BLE001
+                    self.root.report_callback_exception(*sys.exc_info())
+        finally:
+            try:
+                self._poll_id = self.root.after(80, self._poll)
+            except tk.TclError:
+                pass  # window sudah ditutup
 
     def run_bg(self, task, fn, on_done, determinate=False, cancellable=True):
         """Jalankan fn() di thread. fn boleh memakai self.cancel_event dan self.report(done, total, unit)."""
@@ -504,6 +521,15 @@ class AppShell:
         save_settings(self.settings)
 
     def _on_close(self):
+        if self.busy:
+            r = Dialog(self, T("dlg_busy_close_title"), T("dlg_busy_close_msg", task=(self._task or {}).get("name", "")),
+                       [("stop", T("btn_stop_close"), True), (None, T("btn_keep_running"), False)]).result
+            if r != "stop":
+                return
+            if self.cancel_event is not None:
+                self.cancel_event.set()
+            self._close_when_idle(time.time())
+            return
         if self.dirty:
             r = Dialog(self, T("dlg_unsaved_title"), T("dlg_unsaved_msg"),
                        [("save", T("btn_save"), True), ("discard", T("btn_dont_save"), False),
@@ -512,8 +538,22 @@ class AppShell:
                 return
             if r == "save" and not self.save_rules():
                 return
+        self._shutdown()
+
+    def _close_when_idle(self, since):
+        """Tunggu tugas berhenti di item berikutnya (yang sudah dipindah tercatat, bisa di-undo), lalu tutup."""
+        if self.busy and time.time() - since < 30:
+            self.root.after(100, lambda: self._close_when_idle(since))
+            return
+        self._shutdown()
+
+    def _shutdown(self):
         self.watch_stop.set()
         self._save_settings()
+        try:
+            self.root.after_cancel(self._poll_id)
+        except (tk.TclError, AttributeError, ValueError):
+            pass
         self.root.destroy()
 
     # ── target ──
@@ -521,6 +561,9 @@ class AppShell:
         d = filedialog.askdirectory(initialdir=self.folder or str(Path.home()), title=T("pick_folder_title"))
         if not d:
             return
+        if str(Path(d)) != self.folder and getattr(self, "watch_active", False):
+            self.watch_active = False  # watch tidak boleh terus merapikan folder lama
+            self.watch_stop.set()
         self.folder = str(Path(d))
         self.plan, self.dup_groups, self.scan_result, self.dup_root = [], [], None, None
         self._save_settings()

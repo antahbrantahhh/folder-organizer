@@ -149,10 +149,32 @@ class DuplicatesPage:
             return
         r = Dialog(self, T("dlg_dupes_title", n=f"{len(moves):,}"), T("dlg_dupes_msg"),
                    [("ok", T("btn_move"), True), (None, T("btn_cancel"), False)]).result
-        if r == "ok":
-            self.run_bg(T("task_move"),
-                        lambda: org.execute(root, moves, "dedupe", self._progress_cb, cancel=self.cancel_event),
-                        lambda res: self._after_execute(res, root))
+        if r != "ok":
+            return
+        scanned = {g["files"][i][0]: g["files"][i][1] for g in self.dup_groups for i in range(len(g["files"]))}
+        keepers = {m.src: g["files"][g["keeper"]][0] for g in self.dup_groups for m in moves
+                   if any(m.src == f[0] for f in g["files"])}
+
+        def job():
+            # file bisa berubah sejak dicek (diedit, di-undo, dipindah watch): yang berubah tidak dipindah
+            ok_moves, changed = [], []
+            for m in moves:
+                if self._dup_changed(m.src, scanned[m.src]) or self._dup_changed(keepers[m.src], scanned[keepers[m.src]]):
+                    changed.append((m.src, T("e_dup_changed")))
+                else:
+                    ok_moves.append(m)
+            ok, failed = org.execute(root, ok_moves, "dedupe", self._progress_cb, cancel=self.cancel_event)
+            return ok, changed + failed
+
+        self.run_bg(T("task_move"), job, lambda res: self._after_execute(res, root))
+
+    @staticmethod
+    def _dup_changed(p, st) -> bool:
+        try:
+            now = p.stat()
+        except OSError:
+            return True
+        return now.st_size != st.st_size or now.st_mtime != st.st_mtime
 
     def _open_trash(self):
         try:

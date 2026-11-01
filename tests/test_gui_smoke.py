@@ -4,7 +4,6 @@ Butuh display. Jalankan dengan:  set RUN_GUI_TESTS=1  lalu  python -m pytest -q 
 (di Linux tanpa layar: xvfb-run). Dilewati secara default supaya `pytest` biasa tetap cepat.
 """
 import os
-import shutil
 import sys
 import time
 from pathlib import Path
@@ -94,15 +93,15 @@ def test_full_flow(app, target):
     wait(app)
     assert len(app.plan) == 33
 
-    real_move = shutil.move
-    org.shutil.move = lambda s, d: (time.sleep(0.03), real_move(s, d))[1]
+    real_move = org.move_item
+    org.move_item = lambda s, d: (time.sleep(0.03), real_move(s, d))[1]
     try:
         app.do_apply()
         pump(app, 0.3)
         app.cancel_task()
         wait(app)
     finally:
-        org.shutil.move = real_move
+        org.move_item = real_move
     moved = sum(1 for p in target.rglob("*") if p.is_file()) - sum(1 for p in target.iterdir() if p.is_file())
     assert 0 < moved < 33  # dihentikan di tengah
 
@@ -193,3 +192,67 @@ def test_rules_conflict_enabled_toggle_and_bilingual_label(app, target, tmp_path
     assert app.save_rules()
     saved = rules.read_text(encoding="utf-8")
     assert "enabled: false" in saved and "id: Proyek" in saved
+
+
+def test_callback_error_does_not_freeze_later_tasks(app, target):
+    app.folder = str(target)
+    app._build_shell()
+    app.run_bg("t1", lambda: 1, lambda r: 1 / 0)
+    wait(app)
+    got = []
+    app.run_bg("t2", lambda: 2, got.append)
+    wait(app)
+    assert got == [2] and not app.busy
+
+
+def test_only_active_page_is_reachable_by_tab(app, target):
+    app.folder = str(target)
+    app._build_shell()
+    app.show_page("organize")
+    pump(app, 0.1)
+    assert all(not f.winfo_ismapped() for k, f in app.pages.items() if k != "organize")
+    w, seen = app.root, set()
+    for _ in range(80):
+        w = w.tk_focusNext()
+        if w is None or w in seen:
+            break
+        seen.add(w)
+        assert w.winfo_viewable(), f"focus reached hidden widget {w}"
+
+
+def test_close_while_busy_stops_task_first(app, target):
+    import threading
+    app.folder = str(target)
+    app._build_shell()
+    started = threading.Event()
+
+    def job():
+        started.set()
+        while not app.cancel_event.is_set():
+            time.sleep(0.01)
+        return "stopped"
+
+    closed = []
+    app._shutdown = lambda: closed.append(app.busy)
+    app.run_bg("long", job, lambda r: None)
+    started.wait(2)
+    app._on_close()          # AutoDialog memilih "Stop and close"
+    wait(app)
+    pump(app, 0.3)
+    assert closed == [False]  # baru ditutup setelah tugas berhenti
+
+
+def test_changed_duplicate_is_not_moved(app, target):
+    import organizer as org
+    app.folder = str(target)
+    app._build_shell()
+    app.show_page("dupes")
+    app.do_find_dupes()
+    wait(app)
+    assert app.dup_groups
+    g = app.dup_groups[0]
+    victim = g["files"][sorted(g["on"])[0]][0]
+    victim.write_text("edited after the check")
+    app.do_move_dupes()
+    wait(app)
+    assert victim.exists() and not (target / org.TRASH_DIR / victim.name).exists()
