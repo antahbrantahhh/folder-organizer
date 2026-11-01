@@ -248,6 +248,7 @@ def test_icon_changed_by_user_after_label_is_kept(target):
     (f / "desktop.ini").write_text("[.ShellClassInfo]\r\nIconResource=orig.ico,0\r\n", encoding="utf-16")
     org.write_folder_label(f, "Photos", icon="media.ico,0")
     ini = org._read_ini(f / "desktop.ini").replace("IconResource=media.ico,0", "IconResource=user2.ico,0")
+    org._win_set_attrs(f / "desktop.ini", replace=0x80)  # Windows menolak menimpa file hidden+system
     (f / "desktop.ini").write_text(ini, encoding="utf-16")  # user ganti ikon di Explorer
     org.remove_folder_label(f)
     assert "IconResource=user2.ico,0" in org._read_ini(f / "desktop.ini")
