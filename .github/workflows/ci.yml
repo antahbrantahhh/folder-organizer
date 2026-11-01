@@ -67,6 +67,9 @@ jobs:
         run: |
           $p = Start-Process -FilePath "dist\Folder Organizer\Folder Organizer.exe" -ArgumentList "--version" -PassThru -Wait
           if ($p.ExitCode -ne 0) { throw "exe exited with $($p.ExitCode)" }
+          $p = Start-Process -FilePath "dist\Folder Organizer\Folder Organizer.exe" -ArgumentList "--self-test" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "exe self-test failed" }
+          Remove-Item "dist\Folder Organizer\rules.yaml" -ErrorAction SilentlyContinue  # created by the self-test
       - name: Version
         id: ver
         shell: pwsh
@@ -92,6 +95,21 @@ jobs:
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
           Get-ChildItem installer\Output\*.exe | ForEach-Object { & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f "$env:RUNNER_TEMP\sign.pfx" /p $env:SIGN_PFX_PASSWORD $_.FullName }
           Remove-Item "$env:RUNNER_TEMP\sign.pfx"
+      - name: Smoke test installed app (silent install → self-test → uninstall)
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem installer\Output\FolderOrganizer-Setup-*.exe | Select-Object -First 1
+          $dir = Join-Path $env:RUNNER_TEMP "fo-install"
+          $p = Start-Process $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=`"$dir`"" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
+          if (-not (Test-Path "$dir\_internal\rules.yaml")) { throw "default rules.yaml missing from install" }
+          if (-not (Test-Path "$dir\_internal\categories.yaml")) { throw "categories.yaml missing from install" }
+          $p = Start-Process "$dir\Folder Organizer.exe" -ArgumentList "--self-test" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { Get-Content "$env:APPDATA\FolderOrganizer\logs\app.log" -Tail 20; throw "installed app self-test failed" }
+          if (-not (Test-Path "$dir\rules.yaml")) { throw "rules.yaml was not created on first run" }
+          Get-Content "$env:APPDATA\FolderOrganizer\logs\app.log" -Tail 3
+          $p = Start-Process "$dir\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES" -PassThru -Wait
+          if ($p.ExitCode -ne 0) { throw "uninstaller exited with $($p.ExitCode)" }
       - name: Portable zip
         shell: pwsh
         run: Compress-Archive -Path "dist\Folder Organizer" -DestinationPath "FolderOrganizer-${{ steps.ver.outputs.v }}-portable.zip"

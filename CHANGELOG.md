@@ -1,5 +1,11 @@
 # Changelog
 
+## 3.11.1 — installer fix
+- **Fixed:** the installer left out the default rules, so a fresh install showed "Rules file not found". Only the
+  top-level `rules.yaml` is skipped now (your own rules are still kept on upgrade).
+- If you installed 3.11.0: run this installer over it, nothing else to do.
+- CI now installs the app silently, runs a self-test on the installed copy (`--self-test`) and uninstalls it.
+
 ## 3.11 — robustness (P0 + P1 of the v3.10 audit)
 **Data safety**
 - **Moves never copy.** A move is a rename on the same drive. If Windows refuses it (file open in another app,

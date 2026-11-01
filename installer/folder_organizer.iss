@@ -3,7 +3,7 @@
 ; Output: installer\Output\FolderOrganizer-Setup-<version>.exe
 
 #ifndef AppVersion
-  #define AppVersion "3.11.0"
+  #define AppVersion "3.11.1"
 #endif
 
 [Setup]
@@ -34,8 +34,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; rules.yaml is excluded: the app copies the default on first run and keeps the user's own copy on upgrade.
-Source: "..\dist\Folder Organizer\*"; DestDir: "{app}"; Excludes: "rules.yaml"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Only the top-level rules.yaml is excluded ("\" anchors the pattern to the source root), so an upgrade keeps the
+; user's own rules. The default in _internal\rules.yaml MUST be installed: the app copies it on first run.
+Source: "..\dist\Folder Organizer\*"; DestDir: "{app}"; Excludes: "\rules.yaml"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
 Name: "{group}\Folder Organizer"; Filename: "{app}\Folder Organizer.exe"
