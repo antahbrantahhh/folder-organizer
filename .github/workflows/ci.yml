@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   test:
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +49,7 @@ jobs:
   build:
     needs: test
     runs-on: windows-latest
+    timeout-minutes: 25
     env:
       SIGN_PFX_BASE64: ${{ secrets.SIGN_PFX_BASE64 }}
       SIGN_PFX_PASSWORD: ${{ secrets.SIGN_PFX_PASSWORD }}
@@ -95,7 +97,8 @@ jobs:
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
           Get-ChildItem installer\Output\*.exe | ForEach-Object { & $signtool.FullName sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f "$env:RUNNER_TEMP\sign.pfx" /p $env:SIGN_PFX_PASSWORD $_.FullName }
           Remove-Item "$env:RUNNER_TEMP\sign.pfx"
-      - name: Smoke test installed app (silent install → self-test → uninstall)
+      - name: Smoke test installed app (silent install → self-test → update path → uninstall)
+        timeout-minutes: 10
         shell: pwsh
         run: |
           $setup = Get-ChildItem installer\Output\FolderOrganizer-Setup-*.exe | Select-Object -First 1
@@ -113,7 +116,9 @@ jobs:
           $app = Start-Process "$dir\Folder Organizer.exe" -PassThru
           Start-Sleep -Seconds 6
           $log = Join-Path $env:RUNNER_TEMP "update-install.log"
-          $p = Start-Process $setup.FullName -ArgumentList "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH=1", "/DIR=`"$dir`"", "/LOG=`"$log`"" -PassThru -Wait
+          # not -Wait: it also waits for child processes, and the installer relaunches the app as its child
+          $p = Start-Process $setup.FullName -ArgumentList "/SILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CLOSEAPPLICATIONS", "/RELAUNCH=1", "/DIR=`"$dir`"", "/LOG=`"$log`"" -PassThru
+          if (-not $p.WaitForExit(300000)) { Get-Content $log -Tail 40; throw "update install timed out" }
           if ($p.ExitCode -ne 0) { Get-Content $log -Tail 40; throw "update install exited with $($p.ExitCode)" }
           Start-Sleep -Seconds 6
           $procs = @(Get-CimInstance Win32_Process -Filter "Name='Folder Organizer.exe'")
