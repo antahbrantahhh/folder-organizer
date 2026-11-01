@@ -100,6 +100,15 @@ def test_save_detects_external_edit(tmp_path):
     new.save(p, {"rules": [], "recursive": True})  # simpan berikutnya tanpa konflik
 
 
+def test_crlf_file_saves_without_doubled_carriage_returns(tmp_path):
+    p = tmp_path / "rules.yaml"
+    p.write_bytes(b"# comment\r\nrecursive: false  # inline\r\nrules: []\r\n")
+    doc = rules_io.RulesDocument.load(p)
+    assert "\r" not in doc.text
+    doc.save(p, {"recursive": True, "rules": []})
+    assert b"\r\r" not in p.read_bytes() and b"# inline" in p.read_bytes()
+
+
 def test_unbound_document_never_conflicts(tmp_path):
     p = tmp_path / "rules.yaml"
     p.write_text("x: 1\n", encoding="utf-8")

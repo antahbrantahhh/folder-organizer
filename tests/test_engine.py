@@ -353,6 +353,8 @@ def test_blocked_write_raises_access_blocked(target, monkeypatch):
 def test_case_insensitive_name_collision(target):
     touch(target / "Report.pdf", "a")
     touch(target / "report.PDF", "b")
+    if len(list(target.iterdir())) < 2:
+        pytest.skip("case-insensitive file system (Windows): both names are the same file")
     dests = sorted(m.dst.name.lower() for m in org.build_plan(target, cfg()))
     assert len(set(dests)) == 2
 

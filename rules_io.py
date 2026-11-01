@@ -136,7 +136,9 @@ class RulesDocument:
     @classmethod
     def load(cls, path: Path) -> "RulesDocument":
         data = Path(path).read_bytes()
-        return cls(data.decode("utf-8"), hashlib.sha256(data).hexdigest())
+        # newline normalisasi: \r\n dari Windows tidak boleh ikut ke komentar (bisa jadi \r\r\n saat disimpan)
+        text = data.decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        return cls(text, hashlib.sha256(data).hexdigest())
 
     def changed_on_disk(self, path: Path) -> bool:
         """True kalau file berubah sejak dokumen ini dibaca/disimpan (diedit di luar app)."""
@@ -172,7 +174,7 @@ class RulesDocument:
             raise RulesConflict(str(path))
         text = self.render(doc)
         if backup and path.exists():
-            path.with_name(path.name + ".bak").write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+            path.with_name(path.name + ".bak").write_bytes(path.read_bytes())
         tmp = path.with_name(path.name + ".tmp")
         tmp.write_text(text, encoding="utf-8")
         tmp.replace(path)  # atomic: file tidak pernah setengah tertulis
