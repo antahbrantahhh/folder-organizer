@@ -133,8 +133,16 @@ labels that are no longer in the rules are marked "not in rules" so you can clea
 - Files open in another app (reported as failed, nothing lost)
 
 ## Updates
-Settings → Updates → **Check for updates** compares your version with the latest GitHub release and opens the
-release page. Nothing is downloaded or installed automatically.
+The installed app checks GitHub once a day (turn it off in Settings → Updates) and you can check any time with
+**Check for updates**. When a new version is available:
+- **Update now** downloads the installer, verifies it, installs it silently and reopens the app. Your rules,
+  settings and history are kept.
+- The installer is only accepted from GitHub and must match the size and SHA-256 checksum GitHub publishes for
+  the release file; otherwise it is deleted and nothing is installed.
+- **Skip this version** hides the reminder until the next release. The portable version opens the release page.
+
+> Until the .exe is code-signed, updates are only as trustworthy as the GitHub account that publishes them —
+> keep two-factor authentication on for that account.
 
 ## Code layout
 ```

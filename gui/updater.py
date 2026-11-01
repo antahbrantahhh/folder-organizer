@@ -16,7 +16,7 @@ class UpdaterMixin:
         self.update_info = None
         if "--updated" in sys.argv:
             self.root.after(800, lambda: self.infobar.show("success", T("upd_done", v=VERSION), timeout=8000))
-        self.root.after(self.UPDATE_START_DELAY_MS, self._auto_check_updates)
+        self._update_job = self.root.after(self.UPDATE_START_DELAY_MS, self._auto_check_updates)
 
     # ── cek otomatis ──
     def _auto_check_updates(self):

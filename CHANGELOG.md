@@ -1,5 +1,26 @@
 # Changelog
 
+## 3.12 — in-app updates + UI polish
+**Updates**
+- The app checks GitHub once a day (Settings → Updates, can be turned off). When a new version is out it shows
+  *Update now*: the installer is downloaded, checked, installed silently, and the app reopens on the new version.
+  Your rules, settings and history are kept.
+- The download is only accepted from GitHub, must have the exact size and SHA-256 that GitHub reports for the
+  release file, and is deleted if anything doesn't match. Releases without that checksum are never auto-installed.
+- *Skip this version* hides the reminder for that release. The portable version opens the release page instead.
+- CI runs the real update path on Windows: app open → installer with the updater's arguments → app closed,
+  updated and reopened, user rules untouched.
+
+**UI/UX**
+- Organize toolbar fits at the minimum window size (Search shrinks instead of cutting off *Select all*).
+- Long names in tables (Organize, Duplicates, Folder labels, Automation log) show the full text on hover.
+- Overview's count column says *Count* again (a duplicate text key showed "Ext."); a test now catches duplicate keys.
+- Duplicates: *Keep this one* only appears when there are results.
+- Folder labels: rows for folders that exist come first, a summary shows how many exist, *Apply labels* is only
+  enabled when at least one folder exists, and *Create N missing folders* creates the rest in one step.
+- Page descriptions wrap to the window width on every page; the empty Automation log explains what will appear.
+- Per-monitor DPI v2: sharp on every monitor; moving the window to a monitor with another scale re-scales the UI.
+
 ## 3.11.1 — installer fix
 - **Fixed:** the installer left out the default rules, so a fresh install showed "Rules file not found". Only the
   top-level `rules.yaml` is skipped now (your own rules are still kept on upgrade).

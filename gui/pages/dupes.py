@@ -3,7 +3,7 @@
 from tkinter import ttk
 
 from gui.common import (org, T, UserError, open_path, reveal, fmt_time)
-from gui.widgets import (EmptyState, Dialog, make_tree)
+from gui.widgets import (EmptyState, Dialog, TreeTooltip, make_tree)
 
 
 class DuplicatesPage:
@@ -14,7 +14,7 @@ class DuplicatesPage:
         bar = ttk.Frame(f)
         bar.pack(fill="x")
         self._btn(bar, T("btn_find_dupes"), self.do_find_dupes, accent=True).pack(side="left")
-        ttk.Button(bar, text=T("btn_make_original"), command=self._make_keeper).pack(side="right")
+        self.btn_keeper = ttk.Button(bar, text=T("btn_make_original"), command=self._make_keeper)  # hanya saat ada hasil
 
         body = ttk.Frame(f)
         body.pack(fill="both", expand=True, pady=(12, 0))
@@ -28,6 +28,7 @@ class DuplicatesPage:
         self.dup_tree.tag_configure("group", font=(self.fonts.text, 10, "bold"))
         self.dup_tree.bind("<Button-1>", self._dup_click)
         self.dup_tree.bind("<Double-1>", self._dup_dbl)
+        TreeTooltip(self, self.dup_tree)
 
         foot = ttk.Frame(f)
         foot.pack(fill="x", pady=(12, 0))
@@ -75,7 +76,9 @@ class DuplicatesPage:
             self.dup_info.configure(text="")
             self.btn_dup.configure(text=T("btn_move_dupes", n=0))
             self.btn_dup.state(["disabled"])
+            self.btn_keeper.pack_forget()
             return
+        self.btn_keeper.pack(side="right")
         self.dup_empty.pack_forget()
         self.dup_frame.pack(fill="both", expand=True)
         root = self.dup_root

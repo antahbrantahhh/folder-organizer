@@ -6,7 +6,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from gui.common import (org, T, sv_ttk, RULES_PATH, UserError)
-from gui.widgets import make_tree
+from gui.widgets import EmptyState, TreeTooltip, make_tree
 
 
 class AutomationPage:
@@ -33,12 +33,26 @@ class AutomationPage:
         ttk.Label(card, text=T("auto_note"), style="Muted.TLabel", wraplength=860, justify="left").grid(
             row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
         ttk.Label(f, text=T("sec_log"), style="H2.TLabel").pack(anchor="w", pady=(18, 6))
-        fr, self.watch_log = make_tree(f, ("time", "msg"), (T("col_time"), T("col_activity")), (110, 800),
-                                       stretch=("msg",))
-        fr.pack(fill="both", expand=True)
+        body = ttk.Frame(f)
+        body.pack(fill="both", expand=True)
+        self.watch_log_frame, self.watch_log = make_tree(body, ("time", "msg"), (T("col_time"), T("col_activity")),
+                                                         (110, 800), stretch=("msg",))
+        TreeTooltip(self, self.watch_log, ("msg",))
+        self.watch_log_empty = EmptyState(body, self, "auto")
         for when, msg in self.watch_log_rows:
             self.watch_log.insert("", "end", values=(when, msg))
+        self._sync_watch_log()
         self._render_watch_status()
+
+    def _sync_watch_log(self):
+        """Log kosong → empty state yang menjelaskan apa yang akan muncul di sini."""
+        if self.watch_log_rows:
+            self.watch_log_empty.pack_forget()
+            self.watch_log_frame.pack(fill="both", expand=True)
+        else:
+            self.watch_log_frame.pack_forget()
+            self.watch_log_empty.pack(fill="both", expand=True)
+            self.watch_log_empty.set(T("empty_watchlog_title"), T("empty_watchlog_desc"))
 
     def _render_watch_status(self):
         on = self.watch_active
@@ -108,6 +122,7 @@ class AutomationPage:
         del self.watch_log_rows[300:]
         try:
             self.watch_log.insert("", 0, values=row)
+            self._sync_watch_log()
         except (AttributeError, tk.TclError):
             pass
 

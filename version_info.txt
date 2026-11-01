@@ -2,8 +2,8 @@
 # FileDescription = name shown in Task Manager; ProductName = name in Properties → Details.
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(3, 11, 1, 0),
-    prodvers=(3, 11, 1, 0),
+    filevers=(3, 12, 0, 0),
+    prodvers=(3, 12, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -17,11 +17,11 @@ VSVersionInfo(
         u'040904B0',
         [StringStruct(u'CompanyName', u'Bangke'),
          StringStruct(u'FileDescription', u'Folder Organizer'),
-         StringStruct(u'FileVersion', u'3.11.1'),
+         StringStruct(u'FileVersion', u'3.12.0'),
          StringStruct(u'InternalName', u'Folder Organizer'),
          StringStruct(u'OriginalFilename', u'Folder Organizer.exe'),
          StringStruct(u'ProductName', u'Folder Organizer'),
-         StringStruct(u'ProductVersion', u'3.11.1')])
+         StringStruct(u'ProductVersion', u'3.12.0')])
     ]),
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]

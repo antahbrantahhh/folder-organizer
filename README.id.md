@@ -66,7 +66,9 @@ Deskripsi ditulis ke `desktop.ini` (tooltip di Explorer) dan `_README.txt`. Nila
 - Riwayat undo di `%APPDATA%\FolderOrganizer\state\`, disimpan 90 hari (Settings → History); 20 batch terbaru
   selalu disimpan.
 - Log: `%APPDATA%\FolderOrganizer\logs\app.log`.
-- **Cek update:** Settings → Updates membandingkan versi lu dengan rilis terbaru di GitHub. Tidak ada yang
-  diunduh/diinstall otomatis.
+- **Update otomatis:** app hasil installer mengecek GitHub sekali sehari (bisa dimatikan di Settings → Updates).
+  **Update sekarang** mengunduh installer, memverifikasi ukuran & SHA-256-nya dengan yang dicatat GitHub, memasang
+  senyap, lalu membuka app lagi. Aturan, setting, dan riwayat tetap aman. Versi portable membuka halaman rilis.
+  Selama .exe belum di-sign, aktifkan 2FA di akun GitHub yang merilis.
 
 Detail lengkap (kategori, yang otomatis dilewati, struktur kode, development, rilis): [README.md](README.md).

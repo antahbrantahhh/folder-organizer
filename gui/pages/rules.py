@@ -156,7 +156,7 @@ class RulesPage:
         ttk.Label(body, text=T("categories_hint"), style="Muted.TLabel", wraplength=1000, justify="left").pack(
             anchor="w", pady=(0, 10))
         fr, tree = make_tree(body, ("name", "label", "group", "count", "ext"),
-                             (T("col_name"), T("col_label"), T("col_group"), T("col_count"), T("col_extensions")),
+                             (T("col_name"), T("col_label"), T("col_group"), T("col_ext_count"), T("col_extensions")),
                              (150, 210, 110, 60, 520), stretch=("ext",))
         fr.pack(fill="both", expand=True)
         tree.tag_configure("custom", foreground=self.pal["accent"])

@@ -257,3 +257,90 @@ def test_changed_duplicate_is_not_moved(app, target):
     app.do_move_dupes()
     wait(app)
     assert victim.exists() and not (target / org.TRASH_DIR / victim.name).exists()
+
+
+def test_update_flow_downloads_then_installs_and_closes(app, target, monkeypatch, tmp_path):
+    import updates
+    app.folder = str(target)
+    app._build_shell()
+    info = {"version": "9.9.9", "url": "https://github.com/x", "notes": "", "newer": True,
+            "asset": {"name": "FolderOrganizer-Setup-9.9.9.exe", "url": "https://github.com/x", "size": 1, "sha256": "0"}}
+    fake = tmp_path / "setup.exe"
+    fake.write_text("x")
+    calls = []
+    monkeypatch.setattr(updates, "can_self_install", lambda *a: True)
+    monkeypatch.setattr(updates, "download", lambda asset, progress=None, cancel=None: fake)
+    monkeypatch.setattr(updates, "launch_installer", lambda p, log: calls.append(("launch", p)))
+    app._shutdown = lambda: calls.append(("shutdown",))
+    app.start_update(info)      # AutoDialog: "Install and restart"
+    wait(app)
+    assert calls == [("launch", fake), ("shutdown",)]
+
+
+def test_update_verification_failure_is_reported_not_installed(app, target, monkeypatch):
+    import updates
+    app.folder = str(target)
+    app._build_shell()
+    info = {"version": "9.9.9", "url": "u", "notes": "", "newer": True, "asset": {"name": "s", "url": "u", "size": 1, "sha256": "0"}}
+    monkeypatch.setattr(updates, "can_self_install", lambda *a: True)
+
+    def bad(*a, **k):
+        raise updates.UpdateError("bad_hash")
+
+    monkeypatch.setattr(updates, "download", bad)
+    monkeypatch.setattr(updates, "launch_installer", lambda *a: pytest.fail("must not install"))
+    app.start_update(info)
+    wait(app)
+    assert app.infobar.winfo_ismapped() and not app.busy
+
+
+def test_portable_build_opens_release_page_instead(app, target, monkeypatch):
+    import updates
+    import gui.updater
+    opened = []
+    monkeypatch.setattr(updates, "can_self_install", lambda *a: False)
+    monkeypatch.setattr(gui.updater.webbrowser, "open", opened.append)
+    app.folder = str(target)
+    app._build_shell()
+    app.start_update({"version": "9", "url": "https://github.com/r", "asset": {"name": "s"}})
+    assert opened == ["https://github.com/r"]
+
+
+def test_labels_create_missing_folders_then_apply(app, target, tmp_path, monkeypatch):
+    import gui.common
+    import gui.pages.rules as rp
+    rules = tmp_path / "rules.yaml"
+    rules.write_text("rules: []\nfolder_info:\n  Areas/Finance: Bills\n  Projects: Work\n", encoding="utf-8")
+    monkeypatch.setattr(gui.common, "RULES_PATH", rules)
+    monkeypatch.setattr(rp, "RULES_PATH", rules)
+    import gui.shell
+    monkeypatch.setattr(gui.shell, "RULES_PATH", rules)  # _cfg() membaca RULES_PATH dari gui.shell
+    app.folder = str(target)
+    app._load_doc()
+    app._build_shell()
+    app.show_page("labels")
+    pump(app, 0.2)
+    assert app.missing_labels == ["Areas/Finance"]
+    assert app.btn_create_missing.winfo_ismapped()
+    app.do_create_missing()
+    pump(app, 0.2)
+    assert (target / "Areas" / "Finance").is_dir() and not app.missing_labels
+
+
+def test_dupes_keeper_button_only_with_results_and_toolbar_fits_min_size(app, target):
+    app.folder = str(target)
+    app._build_shell()
+    app.root.geometry("1000x640")
+    app.show_page("dupes")
+    pump(app, 0.3)
+    assert not app.btn_keeper.winfo_ismapped()
+    app.do_find_dupes()
+    wait(app)
+    assert app.btn_keeper.winfo_ismapped()
+    app.show_page("organize")
+    pump(app, 0.3)
+    bar = app.plan_search  # toolbar: tombol kanan tidak terpotong di ukuran minimum
+    btns = [w for w in app.pages["organize"].winfo_children()[1].winfo_children() if w.winfo_class() == "TButton"]
+    right = max(b.winfo_rootx() + b.winfo_width() for b in btns)
+    page = app.pages["organize"]
+    assert right <= page.winfo_rootx() + page.winfo_width() + 1, bar

@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from gui.common import (org, T, reveal, reason_label)
-from gui.widgets import (EmptyState, Dialog, make_tree)
+from gui.widgets import (EmptyState, Dialog, TreeTooltip, make_tree)
 
 
 class OrganizePage:
@@ -14,25 +14,27 @@ class OrganizePage:
         self._page_header(f, "organize")
         bar = ttk.Frame(f)
         bar.pack(fill="x")
+        # tombol kanan di-pack lebih dulu supaya tetap utuh saat window sempit; kolom Search yang mengecil
+        ttk.Button(bar, text=T("btn_clear"), command=lambda: self._set_all_plan(False)).pack(side="right")
+        ttk.Button(bar, text=T("btn_select_all"), command=lambda: self._set_all_plan(True)).pack(side="right", padx=6)
         self._btn(bar, T("btn_preview"), self.do_preview, accent=True).pack(side="left")
         ttk.Label(bar, text=T("lbl_rule")).pack(side="left", padx=(18, 6))
-        self.rule_filter = ttk.Combobox(bar, state="readonly", width=28)
+        self.rule_filter = ttk.Combobox(bar, state="readonly", width=22)
         self.rule_filter.pack(side="left")
         self.rule_filter.bind("<<ComboboxSelected>>", lambda e: self._render_plan())
         ttk.Label(bar, text=T("lbl_search")).pack(side="left", padx=(14, 6))
         self.plan_search = tk.StringVar()
         self.plan_search.trace_add("write", lambda *a: self._schedule_render())  # debounce: tidak render per huruf
-        ttk.Entry(bar, textvariable=self.plan_search, width=24).pack(side="left")
-        ttk.Button(bar, text=T("btn_clear"), command=lambda: self._set_all_plan(False)).pack(side="right")
-        ttk.Button(bar, text=T("btn_select_all"), command=lambda: self._set_all_plan(True)).pack(side="right", padx=6)
+        ttk.Entry(bar, textvariable=self.plan_search, width=10).pack(side="left", fill="x", expand=True, padx=(0, 12))
 
         body = ttk.Frame(f)
         body.pack(fill="both", expand=True, pady=(12, 0))
         self.plan_empty = EmptyState(body, self, "organize")
         self.plan_frame, self.plan_tree = make_tree(
             body, ("kind", "src", "dst", "rule"),
-            (T("col_kind"), T("col_from"), T("col_to"), T("lbl_rule")), (80, 320, 400, 200),
-            show="tree headings", stretch=("src", "dst"))
+            (T("col_kind"), T("col_from"), T("col_to"), T("lbl_rule")), (70, 250, 310, 190),
+            show="tree headings", stretch=("src", "dst", "rule"))
+        TreeTooltip(self, self.plan_tree, ("src", "dst", "rule"))
         self.plan_tree.column("#0", width=48, minwidth=48, stretch=False)
         self.plan_tree.heading("#0", text="", image=self.check_img["off"], command=self._toggle_all_visible)
         self.plan_tree.tag_configure("muted", foreground=self.pal["muted"])

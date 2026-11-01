@@ -58,8 +58,48 @@ class AppShell:
         self._bind_shortcuts()
         root.report_callback_exception = self._on_tk_error
         self._poll_id = root.after(80, self._poll)
+        self._dpi = self._window_dpi()
+        if self._dpi:
+            self._apply_dpi(self._dpi, rebuild=abs(self._dpi - self.root.winfo_fpixels("1i")) > 1)
+        root.bind("<Configure>", self._on_root_configure, add="+")
         if hasattr(self, "_init_updater"):
             self._init_updater()
+
+    # ── DPI per monitor ──
+    def _window_dpi(self):
+        if sys.platform != "win32":
+            return None
+        try:
+            import ctypes
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id()) or self.root.winfo_id()
+            return int(ctypes.windll.user32.GetDpiForWindow(hwnd)) or None
+        except Exception:
+            return None
+
+    def _apply_dpi(self, dpi, rebuild=True):
+        self.root.tk.call("tk", "scaling", dpi / 72.0)
+        org.log.info("dpi %s", dpi)
+        if rebuild:
+            self._build_shell()
+
+    def _on_root_configure(self, e):
+        if e.widget is not self.root or sys.platform != "win32":
+            return
+        if getattr(self, "_dpi_job", None):
+            self.root.after_cancel(self._dpi_job)
+        self._dpi_job = self.root.after(250, self._check_dpi)
+
+    def _check_dpi(self):
+        """Window pindah ke monitor dengan skala lain → atur ulang skala Tk & bangun ulang UI (bukan saat sibuk)."""
+        self._dpi_job = None
+        dpi = self._window_dpi()
+        if not dpi or dpi == self._dpi:
+            return
+        if self.busy:
+            self._dpi_job = self.root.after(1000, self._check_dpi)
+            return
+        self._dpi = dpi
+        self._apply_dpi(dpi)
 
     # ── theme ──
     @property
@@ -242,8 +282,10 @@ class AppShell:
         left = ttk.Frame(h)
         left.pack(side="left", fill="x", expand=True)
         ttk.Label(left, text=T(f"{key}_title"), style="Title.TLabel").pack(anchor="w")
-        ttk.Label(left, text=T(f"{key}_desc"), style="Muted.TLabel", wraplength=780, justify="left").pack(
-            anchor="w", pady=(2, 0))
+        desc = ttk.Label(left, text=T(f"{key}_desc"), style="Muted.TLabel", wraplength=780, justify="left")
+        desc.pack(anchor="w", fill="x", pady=(2, 0))
+        # deskripsi mengikuti lebar halaman (bukan lebar tetap), di semua halaman sama
+        left.bind("<Configure>", lambda e, w=desc: w.configure(wraplength=max(300, e.width - 8)), add="+")
         return h
 
     def _btn(self, parent, text, cmd, accent=False):
@@ -414,6 +456,8 @@ class AppShell:
                 b.state(["!disabled"])
             except tk.TclError:
                 pass
+        if hasattr(self, "_after_task_sync"):
+            self._after_task_sync()  # tombol yang punya syarat sendiri (mis. Apply labels) di-set ulang
         if isinstance(err, org.Cancelled):
             self.infobar.show("info", T("ib_cancelled_title"), T("ib_cancelled_read"), timeout=6000)
         elif isinstance(err, org.AccessBlocked):
@@ -553,10 +597,11 @@ class AppShell:
     def _shutdown(self):
         self.watch_stop.set()
         self._save_settings()
-        try:
-            self.root.after_cancel(self._poll_id)
-        except (tk.TclError, AttributeError, ValueError):
-            pass
+        for job in ("_poll_id", "_update_job", "_dpi_job"):
+            try:
+                self.root.after_cancel(getattr(self, job))
+            except (tk.TclError, AttributeError, ValueError, TypeError):
+                pass
         self.root.destroy()
 
     # ── target ──

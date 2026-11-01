@@ -281,3 +281,65 @@ def make_tree(parent, columns, headings, widths, show="headings", stretch=None, 
     return frame, tree
 
 
+
+
+class TreeTooltip:
+    """Tooltip untuk sel Treeview yang terpotong: arahkan mouse ke sel → teks lengkap muncul."""
+
+    def __init__(self, app, tree, columns=None):
+        self.app, self.tree, self.columns = app, tree, columns
+        self.tw, self.job, self.cell = None, None, None
+        self.font = tkfont.nametofont("TkDefaultFont")
+        try:
+            style_font = ttk.Style().lookup(str(tree.cget("style")) or "Treeview", "font")
+            if style_font:
+                self.font = tkfont.Font(font=style_font)
+        except tk.TclError:
+            pass
+        tree.bind("<Motion>", self._motion, add="+")
+        tree.bind("<Leave>", self._hide, add="+")
+        tree.bind("<ButtonPress>", self._hide, add="+")
+        tree.bind("<MouseWheel>", self._hide, add="+")
+
+    def _cell_text(self, row, col):
+        if col == "#0":
+            return self.tree.item(row, "text").strip()
+        idx = int(col[1:]) - 1
+        vals = self.tree.item(row, "values")
+        cid = self.tree["columns"][idx] if idx < len(self.tree["columns"]) else None
+        if self.columns and cid not in self.columns:
+            return ""
+        return str(vals[idx]) if idx < len(vals) else ""
+
+    def _motion(self, e):
+        row, col = self.tree.identify_row(e.y), self.tree.identify_column(e.x)
+        cell = (row, col)
+        if cell == self.cell:
+            return
+        self._hide()
+        self.cell = cell
+        if not row or not col:
+            return
+        text = self._cell_text(row, col)
+        box = self.tree.bbox(row, col)
+        if not text or not box or self.font.measure(text) + 16 <= box[2]:
+            return  # muat penuh → tidak perlu tooltip
+        self.job = self.tree.after(450, lambda: self._show(text, e.x_root, e.y_root))
+
+    def _show(self, text, x, y):
+        p, f = self.app.pal, self.app.fonts
+        self.tw = tw = tk.Toplevel(self.tree)
+        tw.overrideredirect(True)
+        tw.attributes("-topmost", True)
+        tk.Label(tw, text=text, bg=p["tip_bg"], fg=p["text"], font=(f.text, 9), padx=8, pady=4, justify="left",
+                 wraplength=640, highlightthickness=1, highlightbackground=p["border"]).pack()
+        tw.geometry(f"+{x + 12}+{y + 18}")
+
+    def _hide(self, _=None):
+        if self.job:
+            self.tree.after_cancel(self.job)
+            self.job = None
+        if self.tw:
+            self.tw.destroy()
+            self.tw = None
+        self.cell = None
