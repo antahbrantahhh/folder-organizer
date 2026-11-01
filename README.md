@@ -15,7 +15,7 @@ Start menu entry and uninstaller. Your `rules.yaml` and history are kept on upgr
 > The .exe is not code-signed yet, so Windows SmartScreen may show "Windows protected your PC" on first run:
 > click **More info → Run anyway**.
 
-**From source:** install Python 3.10+ from python.org (tick **Add python.exe to PATH**), extract this folder
+**From source:** install Python 3.11+ from python.org (tick **Add python.exe to PATH**), extract this folder
 (e.g. `C:\Tools\folder-organizer\`) and double-click `Folder Organizer GUI.bat`. Dependencies are installed on
 first run.
 

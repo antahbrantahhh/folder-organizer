@@ -15,7 +15,7 @@ menu Start dan uninstaller. `rules.yaml` dan riwayat lu tetap ada saat upgrade m
 > .exe belum di-code-sign, jadi SmartScreen bisa menampilkan "Windows protected your PC" saat pertama jalan:
 > klik **More info → Run anyway**.
 
-**Dari source:** install Python 3.10+ dari python.org (centang **Add python.exe to PATH**), extract folder ini
+**Dari source:** install Python 3.11+ dari python.org (centang **Add python.exe to PATH**), extract folder ini
 (mis. `C:\Tools\folder-organizer\`), lalu double-click `Folder Organizer GUI.bat`. Dependensi diinstall otomatis.
 
 ### Build sendiri

@@ -20,7 +20,7 @@ jobs:
         python: ["3.12"]
         include:
           - os: windows-latest
-            python: "3.10"     # minimum supported version
+            python: "3.11"     # minimum supported version (3.10 is end-of-life)
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
