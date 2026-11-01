@@ -1,5 +1,10 @@
 # Changelog
 
+## 3.12.1 — cleaner update dialog
+- Release notes in the update dialog are shown as clean text: headings in bold, bullets with a hanging indent,
+  no raw Markdown (`**`, `*`, links), words are no longer split across lines, and long notes scroll.
+- First release that can be installed by the in-app updater of 3.12.
+
 ## 3.12 — in-app updates + UI polish
 **Updates**
 - The app checks GitHub once a day (Settings → Updates, can be turned off). When a new version is out it shows

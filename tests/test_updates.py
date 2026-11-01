@@ -181,3 +181,17 @@ def test_verify_detects_file_swapped_after_download(tmp_path):
 def test_installer_env_is_clean():
     env = updates.clean_env({"_PYI_APPLICATION_HOME_DIR": "x", "_MEIPASS2": "y", "TCL_LIBRARY": "z", "PATH": "p"})
     assert env == {"PATH": "p", "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+
+
+def test_release_notes_are_plain_text():
+    md = ("## 3.12 — in-app updates\r\n**Updates**\r\n- The app shows\r\n  *Update now*: it **installs** `silently`.\r\n"
+          "- See [the docs](https://x.y/z)\r\n\r\n---\r\n**Full Changelog**: https://github.com/a/b/commits/v3.12.0\r\n")
+    rows = updates.release_notes(md)
+    assert rows == [("3.12 — in-app updates", "h"), ("Updates", "h"),
+                    ("• The app shows Update now: it installs silently.", ""), ("• See the docs", "")]
+    assert not any(c in t for t, _ in rows for c in "*`[]#")
+
+
+def test_release_notes_limit():
+    rows = updates.release_notes("\n".join(f"- item {i}" for i in range(100)), limit=5)
+    assert len(rows) == 6 and rows[-1][0] == "…"

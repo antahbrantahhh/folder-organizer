@@ -230,12 +230,22 @@ class Dialog(tk.Toplevel):
         if message:
             ttk.Label(body, text=message, wraplength=460, justify="left").pack(anchor="w", pady=(10, 0))
         if detail:
-            txt = tk.Text(body, height=min(8, len(detail)), width=60, relief="flat", font=(app.fonts.text, 9),
-                          bg=app.pal["code_bg"], fg=app.pal["text"], highlightthickness=1,
-                          highlightbackground=app.pal["border"], padx=8, pady=6)
-            txt.insert("1.0", "\n".join(detail))
+            # detail: list teks, atau (teks, "h") untuk judul tebal (mis. catatan rilis)
+            rows = [d if isinstance(d, tuple) else (str(d), "") for d in detail]
+            txt = tk.Text(body, height=min(10, max(3, len(rows))), width=60, relief="flat", wrap="word",
+                          font=(app.fonts.text, 9), bg=app.pal["code_bg"], fg=app.pal["text"], highlightthickness=1,
+                          highlightbackground=app.pal["border"], padx=10, pady=8, spacing1=1, spacing3=1)
+            txt.tag_configure("h", font=(app.fonts.text, 9, "bold"), spacing1=4)
+            txt.tag_configure("bullet", lmargin1=2, lmargin2=14)
+            for i, (text, style) in enumerate(rows):
+                tags = ("h",) if style == "h" else (("bullet",) if text.startswith("• ") else ())
+                txt.insert("end", text + ("\n" if i < len(rows) - 1 else ""), tags)
             txt.configure(state="disabled")
-            txt.pack(fill="x", pady=(12, 0))
+            vs = ttk.Scrollbar(body, orient="vertical", command=txt.yview)
+            txt.configure(yscrollcommand=vs.set)
+            txt.pack(side="left", fill="x", expand=True, pady=(12, 0))
+            if len(rows) > 4:  # baris panjang dibungkus → bisa melebihi tinggi kotak
+                vs.pack(side="left", fill="y", pady=(12, 0))
         bar = ttk.Frame(self, padding=(24, 16, 24, 20))
         bar.pack(fill="x")
         default = None

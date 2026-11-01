@@ -3,7 +3,7 @@
 ; Output: installer\Output\FolderOrganizer-Setup-<version>.exe
 
 #ifndef AppVersion
-  #define AppVersion "3.12.0"
+  #define AppVersion "3.12.1"
 #endif
 
 [Setup]

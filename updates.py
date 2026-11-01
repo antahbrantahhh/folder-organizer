@@ -47,6 +47,49 @@ def parse_version(v: str) -> tuple:
     return tuple(int(n) for n in nums[:4])
 
 
+_MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")
+_MD_EMPH = re.compile(r"(\*\*|__|\*|_|`)(?=\S)(.+?)(?<=\S)\1")
+_URL = re.compile(r"https?://\S+")
+
+
+def _md_inline(s: str) -> str:
+    s = _MD_LINK.sub(r"\1", s)
+    for _ in range(3):  # **bold *nested*** dsb.
+        s = _MD_EMPH.sub(r"\2", s)
+    return s.replace("\\", "")
+
+
+def release_notes(md: str, limit: int = 40) -> list:
+    """Catatan rilis (Markdown GitHub) → baris teks bersih untuk dialog: [(teks, gaya)], gaya "h" = judul.
+    Bullet jadi "•", baris lanjutan digabung ke bullet-nya, tanda **/*/`/[link](url) dibuang, link mentah
+    dan garis pemisah dihilangkan."""
+    out = []
+    for raw in (md or "").replace("\r\n", "\n").split("\n"):
+        line = raw.rstrip()
+        s = line.strip()
+        if not s or re.fullmatch(r"[-*_]{3,}", s) or s.lower().startswith("**full changelog"):
+            if out and out[-1][0]:
+                out.append(("", ""))
+            continue
+        heading = re.match(r"#{1,6}\s+(.*)", s)
+        bold_only = re.fullmatch(r"\*\*(.+?)\*\*:?", s)
+        bullet = re.match(r"[-*+]\s+(.*)", s)
+        if heading or bold_only:
+            out.append((_md_inline((heading or bold_only).group(1)), "h"))
+        elif bullet:
+            out.append(("• " + _md_inline(bullet.group(1)), ""))
+        elif line.startswith(("  ", "\t")) and out and out[-1][0].startswith("• "):
+            out[-1] = (out[-1][0] + " " + _md_inline(s), "")  # lanjutan bullet di baris berikutnya
+        else:
+            out.append((_md_inline(s), ""))
+        out[-1] = (_URL.sub("", out[-1][0]).rstrip(" :"), out[-1][1]) if _URL.search(out[-1][0]) else out[-1]
+    while out and not out[-1][0]:
+        out.pop()
+    if len(out) > limit:
+        out = out[:limit] + [("…", "")]
+    return out
+
+
 def is_newer(latest: str, current: str) -> bool:
     """Tag pre-release (mis. v3.13.0-rc.1, 3.13-beta2) tidak pernah dianggap update."""
     if not _RELEASE_TAG.fullmatch(str(latest).strip()):

@@ -78,7 +78,7 @@ class UpdaterMixin:
             buttons = ([("update", T("btn_update_now"), True)] if self._can_self_install(info) else []) + [
                 ("page", T("btn_download"), not self._can_self_install(info)), ("skip", T("btn_skip_version"), False),
                 (None, T("btn_later"), False)]
-            notes = info["notes"].splitlines()[:30] or None
+            notes = updates.release_notes(info["notes"]) or None
             msg = T("upd_available_msg_auto" if self._can_self_install(info) else "upd_available_msg", cur=VERSION)
             r = Dialog(self, T("upd_available_title", v=info["version"]), msg, buttons, notes).result
             if r == "update":
