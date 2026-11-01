@@ -1,0 +1,364 @@
+# ─────────────────────────────────────────────────────────────
+# Folder Organizer rules (v3.10)
+# Rules are checked TOP to BOTTOM — the first matching rule wins.
+# So the most specific rules (identity, finance) are at the top, general categories below.
+#
+# File rule conditions (all optional, combined with AND):
+#   category:         cad_mech  /  [photo, image]   category from the library (categories.yaml, 44 categories)
+#   ext:              [pdf, docx]                   extra extensions outside the categories
+#   name_regex:       "invoice|faktur"              file name regex (case-insensitive)
+#   older_than_days / newer_than_days / min_size_mb / max_size_mb
+#   enabled: false                                  turn a rule off without deleting it
+# No category & no ext = every file type.
+#
+# Destination (dest): relative to the target folder. Placeholders: {period} {year} {month} {day} {ext} {EXT}
+#   {period} = date folder following date_format below (default "2026-10").
+#   dest: "."  = leave in place (useful for files you just downloaded).
+#
+# The pattern "(?<![a-z])word(?![a-z])" means a whole word. Used instead of \b because \b fails on names
+# like "invoice_tokopedia.pdf" (an underscore counts as a letter).
+# ─────────────────────────────────────────────────────────────
+
+# false = only files at the top level (safe for Downloads/Desktop)
+recursive: false
+
+# Folders/files that are never touched (glob patterns, relative to the target folder)
+exclude:
+  - "Projects/**"
+  - "WORK"            # container folder: moving it would nest it (Projects/WORK/...)
+  - "REPOS"
+  - "*.lnk"           # Desktop shortcuts
+
+# Files that match no rule go here. Set to null to leave them in place.
+fallback_dest: "_Inbox/_Review"
+
+# Date folder format for {period}. Date = EXIF for photos, otherwise the file's last-modified date.
+#   "{year}"                → 2026
+#   "{year}-{month}"        → 2026-10        (default)
+#   "{year}/{month}"        → 2026/10        (nested)
+#   "{year}/{year}-{month}" → 2026/2026-10
+date_format: "{year}-{month}"
+
+# ─────────────────────────────────────────────────────────────
+# CUSTOM CATEGORIES (optional) — add to or change the library categories
+#   name: [ext, ...]                         → add extensions to a built-in category, or create a new one
+#   name: {ext: [...], replace: true}        → replace a built-in category's extensions entirely
+#   name: {ext: [...], en: "...", id: "..."} → new category with labels
+# ─────────────────────────────────────────────────────────────
+categories: {}
+#  cad_mech: [scdoc]                               # example: add .scdoc (SpaceClaim) to the CAD category
+#  training_certificates: {ext: [pdf], en: "Training certificates", id: "Sertifikat pelatihan"}
+
+# ─────────────────────────────────────────────────────────────
+# FOLDER RULES — move top-level folders (with everything inside)
+# Conditions: name_regex, older_than_days, newer_than_days
+# Folder age = the most recent change INSIDE the folder (not just the folder's own date).
+# Always skipped: dot-folders, folders created by the organizer, folders in 'exclude',
+# junctions/symlinks, application-owned folders, and this app's own folder. Not run in watch mode.
+# ─────────────────────────────────────────────────────────────
+folder_rules:
+  - name: Leftover extracts & downloads
+    name_regex: "^(files|archive|download|downloads|new folder|untitled|extracted|unzipped)\\s*(\\(\\d+\\))?$|^today$"
+    dest: "_Inbox/_Review/Folders"
+
+  - name: Extracted tools & portable apps
+    name_regex: "-(win(dows|32|64)?|x64|x86|amd64|arm64|portable)([-.]|$)|^node-v\\d"
+    dest: "_Archive/Tools"
+
+  - name: Prototypes & demos
+    name_regex: "^(protot[iy]pe|demo)(?![a-z])|-html$"
+    dest: "Projects/_Prototypes"
+
+  - name: Design systems
+    name_regex: "design.?system|^dsg(?![a-z])"
+    dest: "Resources/Design Systems"
+
+  # Example: recognize your projects by name. Put your own project names in the regex, then enable it.
+  - name: Known projects
+    enabled: false
+    name_regex: "^(project-a|project-b|client-)"
+    dest: "Projects"
+
+  - name: Old folders (no changes > 180 days)
+    older_than_days: 180
+    dest: "_Archive/Folders/{period}"
+
+# Folders that match no folder rule go here. Default null = leave in place.
+# Safe for Documents (many app-owned folders). For Downloads you could set e.g. "Projects".
+folder_fallback: null
+
+# ─────────────────────────────────────────────────────────────
+# FOLDER INFO — folder descriptions, written by the Folder labels page
+#   • Shown as a tooltip when hovering the folder in Explorer (desktop.ini → InfoTip)
+#   • Plus a _README.txt inside the folder (turn off with folder_info_readme: false)
+#   • Plain text, or {en: ..., id: ...} — the app writes the language it is set to.
+# ─────────────────────────────────────────────────────────────
+folder_info_readme: true
+
+folder_info:
+  "_Inbox":
+    en: "Entry point. New files and anything not yet sorted. Review weekly and empty it."
+    id: "Pintu masuk. File baru & yang belum jelas kategorinya. Review mingguan, kosongkan."
+  "_Inbox/_Review":
+    en: "Matched no rule. Move by hand or add a new rule."
+    id: "Tidak cocok dengan rule mana pun. Pindahkan manual atau tambah rule baru."
+  "_Inbox/_Review/Folders":
+    en: "Leftover extracts/downloads (files(1), archive(4), …). Check, then move or delete."
+    id: "Sisa extract/download (files(1), archive(4), dst). Cek isi, lalu pindahkan atau hapus."
+  "Projects":
+    en: "Active work with a goal and a deadline. One folder per project. Done → move to _Archive."
+    id: "Pekerjaan aktif dengan tujuan & deadline. Satu folder per project. Selesai → pindah ke _Archive."
+  "Projects/_Prototypes":
+    en: "HTML prototypes & demos. Proof of concept, not the main source."
+    id: "Prototype & demo HTML. Bukti konsep, bukan source utama."
+  "Areas":
+    en: "Ongoing responsibilities with no end date (finance, admin, legal, personal)."
+    id: "Tanggung jawab berjalan tanpa tanggal selesai (keuangan, admin, legal, pribadi)."
+  "Areas/Finance":
+    en: "Invoices, receipts, bank statements, payslips. By year-month."
+    id: "Invoice, faktur, kwitansi, rekening koran, slip gaji. Per tahun-bulan."
+  "Areas/Personal/Identity":
+    en: "ID cards, tax ID, family card, certificates, diplomas, passport. Sensitive: keep out of publicly synced folders."
+    id: "KTP, NPWP, KK, akta, ijazah, paspor. Sensitif: jangan di folder yang ter-sync publik."
+  "Areas/Personal/Keys":
+    en: "Keys, certificates, VPN files & password vaults. Sensitive: keep an encrypted backup."
+    id: "Kunci, sertifikat, file VPN & password vault. Sensitif: backup terenkripsi."
+  "Resources":
+    en: "Reference material reused across projects (design systems, code, fonts, assets)."
+    id: "Bahan referensi yang dipakai ulang lintas project (design system, code, font, aset)."
+  "Resources/Design Systems":
+    en: "Design systems & tokens. Source of truth for UI across projects."
+    id: "Design system & token. Sumber kebenaran untuk UI lintas project."
+  "Resources/Code":
+    en: "Snippets, scripts, notebooks, loose config files."
+    id: "Snippet, script, notebook, file config lepas."
+  "Resources/Data":
+    en: "Data exports, JSON/XML, databases & SQL dumps."
+    id: "Ekspor data, JSON/XML, database & dump SQL."
+  "Resources/CAD":
+    en: "CAD drawings & models (STEP, SolidWorks, Inventor, DWG/DXF)."
+    id: "Gambar & model CAD (STEP, SolidWorks, Inventor, DWG/DXF)."
+  "Resources/3D Models":
+    en: "3D models & print files (STL, 3MF, OBJ, G-code)."
+    id: "Model 3D & file cetak 3D (STL, 3MF, OBJ, G-code)."
+  "Resources/Engineering":
+    en: "Simulation & analysis files (MATLAB/Simulink, ANSYS, COMSOL, EES)."
+    id: "File simulasi & analisis (MATLAB/Simulink, ANSYS, COMSOL, EES)."
+  "Resources/Books":
+    en: "E-books & reference books."
+    id: "E-book & buku referensi."
+  "Documents":
+    en: "General documents (PDF, Word) by year-month. Project-related → move to Projects."
+    id: "Dokumen umum (PDF, Word) per tahun-bulan. Yang terkait project → pindah ke Projects."
+  "Documents/Spreadsheets":
+    en: "Excel/CSV by year-month."
+    id: "Excel/CSV per tahun-bulan."
+  "Documents/Presentations":
+    en: "PowerPoint/slides by year-month."
+    id: "PowerPoint/slide per tahun-bulan."
+  "Documents/Notes":
+    en: "Text & Markdown notes by year-month."
+    id: "Catatan teks & Markdown, per tahun-bulan."
+  "Media":
+    en: "Photos, images, screenshots, video, audio."
+    id: "Foto, gambar, screenshot, video, audio."
+  "Media/Photos":
+    en: "Camera/phone photos by year-month (date from EXIF)."
+    id: "Foto kamera/HP per tahun-bulan (tanggal dari EXIF)."
+  "Media/Images":
+    en: "Images & graphics (logos, wallpapers, mockups, exports) by year-month."
+    id: "Gambar & grafis (logo, wallpaper, mockup, hasil export) per tahun-bulan."
+  "Media/Screenshots":
+    en: "Screenshots by month. Safe to clean up regularly."
+    id: "Screenshot per bulan. Aman dibersihkan berkala."
+  "_Archive":
+    en: "Inactive but kept. Read-mostly. Installers, old zips, finished projects."
+    id: "Tidak aktif tapi disimpan. Read-mostly. Installer, zip lama, project selesai."
+  "_Archive/Installers":
+    en: "Installers (.exe/.msi/.apk). Delete outdated versions."
+    id: "Installer (.exe/.msi/.apk). Hapus yang versinya sudah usang."
+  "_Archive/Tools":
+    en: "Portable / extracted tools (node, ffmpeg, …)."
+    id: "Tool portable / hasil extract (node, ffmpeg, dll.)."
+  "_Archive/Folders":
+    en: "Folders unchanged for > 180 days, by year-month."
+    id: "Folder yang tidak diubah > 180 hari, per tahun-bulan."
+  # Example for a project folder:
+  # "Projects/MyProject": "Project goal, status, link to repo/main doc."
+
+# ─────────────────────────────────────────────────────────────
+# FILE RULES
+# ─────────────────────────────────────────────────────────────
+rules:
+  # ── 1. Sensitive & personal (at the top so they do not end up in Photos/Documents) ──
+  - name: Identity documents
+    name_regex: "(?<![a-z])(ktp|e-?ktp|npwp|kartu.?keluarga|akta|ijazah|paspor|passport|bpjs|kitas|sim.?[abc])(?![a-z])"
+    category: [pdf, word, photo, image]
+    dest: "Areas/Personal/Identity"
+
+  - name: Keys, certificates & vaults
+    category: keys_certs
+    dest: "Areas/Personal/Keys"
+
+  # ── 2. Finance ──
+  - name: Invoices & receipts
+    name_regex: "(?<![a-z])(invoice|inv|faktur|kwitansi|kuitansi|receipt|nota|tagihan|billing)(?![a-z])"
+    category: [pdf, photo, image, spreadsheet]
+    dest: "Areas/Finance/Invoices/{period}"
+
+  - name: Bank statements & payslips
+    name_regex: "e-?statement|rekening|mutasi.?rek|slip.?gaji|payslip|spt.?tahunan|bukti.?potong"
+    category: [pdf, spreadsheet]
+    dest: "Areas/Finance/Statements/{period}"
+
+  # ── 3. New downloads: leave them for now (so a just-downloaded installer/zip does not vanish) ──
+  - name: Recent installers & archives (keep)
+    category: [installer_windows, installer_mobile, installer_other, archive, disk_image]
+    newer_than_days: 7
+    dest: "."
+
+  # ── 4. Software & archives ──
+  - name: Installers
+    category: [installer_windows, installer_mobile, installer_other]
+    dest: "_Archive/Installers"
+
+  - name: Archives
+    category: archive
+    dest: "_Archive/Compressed/{period}"
+
+  - name: Disk images & VMs
+    category: disk_image
+    dest: "_Archive/Disk Images"
+
+  - name: Developer packages
+    category: dev_package
+    dest: "Resources/Packages"
+
+  - name: Torrents
+    category: torrent
+    dest: "_Archive/Torrents"
+
+  # ── 5. Documents ──
+  - name: School material
+    name_regex: "BS-KLS|buku.?(siswa|guru)|modul.?ajar|(?<![a-z])(lks|rpp)(?![a-z])"
+    category: [pdf, word, presentation]
+    dest: "Resources/School/{period}"
+
+  - name: E-books
+    category: ebook
+    dest: "Resources/Books"
+
+  - name: Spreadsheets
+    category: spreadsheet
+    dest: "Documents/Spreadsheets/{period}"
+
+  - name: Presentations
+    category: presentation
+    dest: "Documents/Presentations/{period}"
+
+  - name: Documents
+    category: [pdf, word, form_publishing]
+    dest: "Documents/{period}"
+
+  - name: Notes & text
+    category: [text, note]
+    dest: "Documents/Notes/{period}"
+
+  - name: E-mail
+    category: email
+    dest: "Documents/Email/{period}"
+
+  - name: Calendar & contacts
+    category: calendar_contact
+    dest: "Documents/Calendar & Contacts"
+
+  - name: Saved web pages
+    category: web_archive
+    dest: "Documents/Web Pages/{period}"
+
+  # ── 6. Images & media ──
+  - name: Screenshots
+    name_regex: "^(screenshot|screen shot|cuplikan layar|snip|capture|screencapture|scr_)"
+    category: [image, photo]
+    dest: "Media/Screenshots/{period}"
+
+  - name: RAW photos
+    category: photo_raw
+    dest: "Media/Photos/RAW/{period}"
+
+  - name: Camera & phone photos
+    name_regex: "^(img|dsc|dscn|dscf|pxl|p_|vid|dcim|mvimg)[_-]?\\d|^whatsapp (image|video)|^photo[_-]?\\d|^\\d{8}_\\d{6}"
+    category: photo
+    dest: "Media/Photos/{period}"
+
+  - name: HEIC photos
+    ext: [heic, heif, hif]
+    dest: "Media/Photos/{period}"
+
+  - name: Images & graphics
+    category: [image, photo]
+    dest: "Media/Images/{period}"
+
+  - name: Videos & subtitles
+    category: [video, subtitle]
+    dest: "Media/Videos/{period}"
+
+  - name: Audio
+    category: [audio, playlist]
+    dest: "Media/Audio"
+
+  - name: Audio projects
+    category: audio_project
+    dest: "Media/Audio Projects"
+
+  # ── 7. Design ──
+  - name: Design files
+    category: [vector, design_source]
+    dest: "Resources/Design"
+
+  - name: Fonts
+    category: font
+    dest: "Resources/Fonts"
+
+  # ── 8. Engineering ──
+  - name: CAD
+    category: cad_mech
+    dest: "Resources/CAD"
+
+  - name: 3D models & print files
+    category: model_3d
+    dest: "Resources/3D Models"
+
+  - name: BIM & GIS
+    category: bim_gis
+    dest: "Resources/BIM & GIS"
+
+  - name: Simulation & analysis
+    category: engineering_sim
+    dest: "Resources/Engineering"
+
+  - name: Electronics & PCB
+    category: electronics
+    dest: "Resources/Electronics"
+
+  # ── 9. Developer ──
+  - name: Code, scripts & notebooks
+    category: [code, script, notebook, config]
+    dest: "Resources/Code"
+
+  - name: Data & databases
+    category: [data, database]
+    dest: "Resources/Data"
+
+  # ── 10. System ──
+  - name: Logs & crash dumps
+    category: log
+    dest: "_Archive/Logs/{period}"
+
+  - name: Backups & old copies
+    category: backup
+    dest: "_Archive/Backups"
+
+  - name: Shortcuts & links (keep)
+    category: shortcut
+    dest: "."

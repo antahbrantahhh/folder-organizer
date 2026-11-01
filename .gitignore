@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+build/
+dist/
+installer/Output/
+*.spec.bak
+rules.yaml.bak
+rules.yaml.tmp
+.organizer/
+_to_delete/
+*.zip
+.venv/
+venv/

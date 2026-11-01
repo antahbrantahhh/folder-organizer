@@ -1,0 +1,6 @@
+# Runtime dependencies. Ranges allow bug-fix updates but not the next major version.
+# Builds and CI install the exact versions in requirements.lock instead.
+pyyaml>=6.0,<7
+sv-ttk>=2.6,<3
+pillow>=10.0,<14
+ruamel.yaml>=0.18,<0.20

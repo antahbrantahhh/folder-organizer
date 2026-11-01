@@ -1,0 +1,4 @@
+-r requirements.txt
+pytest>=8.0,<10
+pyflakes>=3.0,<5
+cairosvg>=2.7,<3    # only for build_icons.py

@@ -1,0 +1,123 @@
+# ─────────────────────────────────────────────────────────────
+# Library kategori file — Folder Organizer
+# Dipakai di rules.yaml lewat:   category: cad_mech      atau   category: [photo_raw, image]
+# Setiap ekstensi hanya ada di SATU kategori, supaya hasil aturan bisa ditebak.
+# Ekstensi ambigu diputuskan ke arah yang lebih aman: .key = kunci (bukan Keynote), .asc = PGP, .env = rahasia.
+# .ts = TypeScript (bukan video MPEG-TS; video kamera memakai .mts/.m2ts).
+# names: nama file utuh tanpa ekstensi (mis. Dockerfile, README, .env), tidak peka huruf besar/kecil.
+# Kategori sendiri / tambahan ekstensi: tulis di rules.yaml → categories: (lihat contoh di sana).
+# ─────────────────────────────────────────────────────────────
+
+# ── Dokumen ──
+pdf:            {group: documents, en: PDF, id: PDF, ext: [pdf]}
+word:           {group: documents, en: Word processor, id: Pengolah kata,
+                 ext: [doc, docx, docm, dot, dotx, dotm, odt, ott, rtf, wpd, wps, pages, hwp]}
+text:           {group: documents, en: Plain text & Markdown, id: Teks & Markdown,
+                 ext: [txt, md, markdown, mdx, rst, adoc, asciidoc, org, tex, bib, nfo, text],
+                 names: [readme, license, licence, changelog, authors, contributors, contributing, notice, copying, todo]}
+spreadsheet:    {group: documents, en: Spreadsheet, id: Spreadsheet,
+                 ext: [xls, xlsx, xlsm, xlsb, xlt, xltx, xltm, ods, ots, csv, tsv, numbers, gsheet]}
+presentation:   {group: documents, en: Presentation, id: Presentasi,
+                 ext: [ppt, pptx, pptm, pps, ppsx, pot, potx, potm, odp, otp, gslides]}
+ebook:          {group: documents, en: E-book & comics, id: E-book & komik,
+                 ext: [epub, mobi, azw, azw3, kfx, fb2, djvu, ibooks, cbz, cbr, cb7, lit]}
+note:           {group: documents, en: Notes app exports, id: Ekspor aplikasi catatan,
+                 ext: [one, onetoc2, enex, notebook, gdoc]}
+email:          {group: documents, en: E-mail & mailbox, id: E-mail & mailbox,
+                 ext: [eml, msg, mbox, emlx, pst, ost, oft]}
+calendar_contact: {group: documents, en: Calendar & contacts, id: Kalender & kontak,
+                 ext: [ics, ical, ifb, vcs, vcf, vcard]}
+form_publishing: {group: documents, en: Publishing & forms, id: Publikasi & formulir,
+                 ext: [pub, xps, oxps, fdf, xfdf, indd, idml, qxp]}
+
+# ── Gambar & desain ──
+photo:          {group: media, en: Camera photo, id: Foto kamera, ext: [jpg, jpeg, jpe, jfif, heic, heif, hif]}
+photo_raw:      {group: media, en: RAW photo, id: Foto RAW,
+                 ext: [dng, cr2, cr3, crw, nef, nrw, arw, srf, sr2, orf, rw2, raf, pef, srw, x3f, 3fr, iiq, rwl, erf, mrw, raw]}
+image:          {group: media, en: Image & graphic, id: Gambar & grafis,
+                 ext: [png, gif, webp, bmp, dib, tif, tiff, ico, icns, avif, jxl, jp2, tga, pcx, apng, exr, hdr, dds]}
+vector:         {group: design, en: Vector graphic, id: Grafis vektor, ext: [svg, svgz, eps, ai, cdr, emf, wmf, cgm]}
+design_source:  {group: design, en: Design source file, id: File sumber desain,
+                 ext: [psd, psb, fig, jam, sketch, xd, afdesign, afphoto, afpub, kra, xcf, procreate, clip, sai, ora,
+                       pdn, cpt, riv, lottie, aep, prproj, drp, fcpxml, veg, kdenlive, mlt]}
+font:           {group: design, en: Font, id: Font, ext: [ttf, otf, woff, woff2, eot, fon, fnt, pfb, pfm, ttc, otc]}
+
+# ── Video & audio ──
+video:          {group: media, en: Video, id: Video,
+                 ext: [mp4, m4v, mov, mkv, avi, wmv, webm, flv, f4v, mpg, mpeg, m2v, 3gp, 3g2, mts, m2ts, vob, ogv, rm,
+                       rmvb, asf, divx, mxf, insv, braw, r3d]}
+subtitle:       {group: media, en: Subtitle, id: Subtitle, ext: [srt, vtt, ass, ssa, sub, idx, sbv, smi, ttml]}
+audio:          {group: media, en: Audio, id: Audio,
+                 ext: [mp3, wav, m4a, m4b, flac, aac, ogg, oga, opus, wma, aiff, aif, aifc, alac, amr, ape, wv, mka, au,
+                       caf, dsf, dff, mid, midi]}
+audio_project:  {group: media, en: Music/audio project, id: Proyek musik/audio,
+                 ext: [als, flp, logicx, aup, aup3, ptx, cpr, rpp, band, sesx, reason, song, mmpz]}
+playlist:       {group: media, en: Playlist, id: Playlist, ext: [m3u, m3u8, pls, xspf, wpl, cue]}
+
+# ── Arsip, image disk, installer ──
+archive:        {group: archive, en: Archive, id: Arsip,
+                 ext: [zip, rar, 7z, tar, gz, tgz, bz2, tbz2, xz, txz, zst, lz, lz4, lzma, cab, arj, z, ace, sitx, sit,
+                       zipx, wim]}
+disk_image:     {group: archive, en: Disk image & VM, id: Disk image & VM,
+                 ext: [iso, img, vhd, vhdx, vmdk, vdi, dmg, qcow2, ova, ovf, bin, nrg, mdf, mds, toast]}
+installer_windows: {group: software, en: Windows installer, id: Installer Windows,
+                 ext: [exe, msi, msix, msixbundle, appx, appxbundle, msp, msu]}
+installer_mobile:  {group: software, en: Mobile app package, id: Paket aplikasi mobile, ext: [apk, aab, xapk, apks, apkm, ipa]}
+installer_other:   {group: software, en: Mac/Linux installer, id: Installer Mac/Linux,
+                 ext: [pkg, mpkg, deb, rpm, appimage, flatpakref, snap, run]}
+dev_package:    {group: software, en: Developer package & extension, id: Paket developer & ekstensi,
+                 ext: [whl, jar, war, ear, nupkg, gem, crx, xpi, vsix, unitypackage, aar, egg]}
+torrent:        {group: software, en: Torrent, id: Torrent, ext: [torrent, magnet]}
+
+# ── Kode, data, konfigurasi ──
+code:           {group: dev, en: Source code, id: Kode sumber,
+                 ext: [py, pyw, pyi, js, mjs, cjs, jsx, tsx, dart, java, kt, kts, swift, go, rs, c, h, cpp, cxx, hpp, hh,
+                       cc, cs, vb, fs, php, rb, lua, r, rmd, scala, groovy, gradle, pl, pm, ex, exs, erl, hs, clj, zig,
+                       nim, sol, vue, svelte, astro, html, htm, css, scss, sass, less, styl, cmake, mk, ino, ts, cts, m,
+                       mm, hbs, handlebars, ejs, pug, jade, twig, jinja, jinja2, j2, liquid, mustache, njk, razor,
+                       cshtml, http, rest]}
+notebook:       {group: dev, en: Notebook, id: Notebook, ext: [ipynb, rmarkdown, qmd, nb, wl, mlx]}
+script:         {group: dev, en: Script & automation, id: Script & otomasi,
+                 ext: [bat, cmd, ps1, psm1, psd1, sh, bash, zsh, fish, vbs, vbe, wsf, ahk, au3, reg, applescript, scpt,
+                       command]}
+data:           {group: dev, en: Data & export, id: Data & ekspor,
+                 ext: [json, jsonl, ndjson, geojson, xml, parquet, avro, orc, feather, arrow, pkl, pickle, npy, npz, h5,
+                       hdf5, sav, dta, rds, rdata, xpt, har]}
+database:       {group: dev, en: Database & SQL, id: Database & SQL,
+                 ext: [sql, sqlite, sqlite3, db, db3, mdb, accdb, frm, ibd, dump, realm, dbf]}
+config:         {group: dev, en: Config & environment, id: Konfigurasi & environment,
+                 ext: [yaml, yml, toml, ini, cfg, conf, config, properties, plist, editorconfig, lock, prisma,
+                       proto, graphql, gql, tf, tfvars, hcl, nix, dockerfile, bicep, csproj, fsproj, vbproj, sln,
+                       vcxproj, vcproj, iml, pbxproj, xcconfig, sum, mod, pubspec, nuspec],
+                 names: [dockerfile, makefile, gnumakefile, procfile, vagrantfile, jenkinsfile, gemfile, rakefile,
+                         podfile, brewfile, .gitignore, .gitattributes, .gitmodules, .dockerignore, .npmrc, .nvmrc,
+                         .yarnrc, .prettierrc, .eslintrc, .babelrc, .editorconfig, .browserslistrc, .flake8, .pylintrc,
+                         .stylelintrc, .terraformrc]}
+web_archive:    {group: dev, en: Saved web page, id: Halaman web tersimpan, ext: [mht, mhtml, webarchive, maff, warc]}
+log:            {group: dev, en: Log & dump, id: Log & dump, ext: [log, out, err, trace, dmp, mdmp, etl, evtx, crash]}
+
+# ── Teknik & sains ──
+cad_mech:       {group: engineering, en: CAD (mechanical), id: CAD (mesin),
+                 ext: [step, stp, iges, igs, sldprt, sldasm, slddrw, ipt, iam, idw, ipn, catpart, catproduct, catdrawing,
+                       f3d, f3z, x_t, x_b, sat, sab, jt, prt, asm, par, psm, neu, 3dxml, dwg, dxf, dwf, dwfx, dgn]}
+model_3d:       {group: engineering, en: 3D model & print, id: Model 3D & cetak,
+                 ext: [stl, 3mf, obj, mtl, fbx, blend, 3ds, max, ma, mb, c4d, dae, gltf, glb, skp, usd, usda, usdz, ply,
+                       amf, gcode, bgcode, ctb, chitubox, lys, 3dm]}
+bim_gis:        {group: engineering, en: BIM & GIS, id: BIM & GIS,
+                 ext: [ifc, rvt, rfa, rte, nwd, nwc, pln, shp, shx, prj, kml, kmz, gpx, qgz, qgs, mxd, aprx, gpkg, osm, pbf]}
+engineering_sim: {group: engineering, en: Simulation & analysis, id: Simulasi & analisis,
+                 ext: [slx, mdl, mat, mph, wbpj, cdb, inp, odb, cae, fem, ees, edr, hsc, apw, bkp, cas, msh,
+                       lvproj, vi, mws, sce, xcos, pz2]}
+electronics:    {group: engineering, en: Electronics & PCB, id: Elektronika & PCB,
+                 ext: [kicad_pcb, kicad_sch, kicad_pro, sch, brd, pcbdoc, schdoc, prjpcb, fzz, gbr, gerber, drl, cir,
+                       ms14, ms7, dsn, ewb]}
+
+# ── Keamanan & sistem ──
+keys_certs:     {group: security, en: Keys, certificates & vaults, id: Kunci, sertifikat & vault,
+                 ext: [pem, key, crt, cer, der, p12, pfx, p7b, p7c, csr, jks, keystore, ppk, gpg, pgp, asc, sig,
+                       ovpn, kdbx, kdb, 1pux, opvault, agilekeychain, env],
+                 names: [.env, .env.local, .env.development, .env.production, .env.staging, .env.test, .netrc,
+                         .pgpass, .htpasswd, id_rsa, id_dsa, id_ecdsa, id_ed25519, known_hosts, authorized_keys,
+                         credentials]}
+backup:         {group: system, en: Backup & old copy, id: Backup & salinan lama, ext: [bak, backup, old, orig, swp, bkf, tib, abk]}
+shortcut:       {group: system, en: Shortcut & link, id: Shortcut & tautan, ext: [lnk, url, webloc, desktop, website]}
