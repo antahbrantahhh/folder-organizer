@@ -327,6 +327,12 @@ class TreeTooltip:
         self.job = self.tree.after(450, lambda: self._show(text, e.x_root, e.y_root))
 
     def _show(self, text, x, y):
+        self.job = None
+        try:
+            if not self.tree.winfo_exists():
+                return
+        except tk.TclError:
+            return
         p, f = self.app.pal, self.app.fonts
         self.tw = tw = tk.Toplevel(self.tree)
         tw.overrideredirect(True)

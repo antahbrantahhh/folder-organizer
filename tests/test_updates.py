@@ -108,7 +108,7 @@ def test_download_rejects_bad_files_and_leaves_nothing(tmp_path, data, final, re
     with pytest.raises(updates.UpdateError) as e:
         updates.download(GOOD, tmp_path, opener=dl_opener(data, final))
     assert str(e.value) == reason
-    assert not [f for f in (tmp_path / "FolderOrganizer-update").iterdir()]
+    assert not list(tmp_path.glob("FolderOrganizer-update*"))  # tidak ada sisa file / folder
 
 
 def test_download_refuses_non_github_url_before_connecting(tmp_path):
@@ -124,7 +124,7 @@ def test_download_cancel_removes_partial_file(tmp_path):
     cancel.set()
     with pytest.raises(updates.UpdateCancelled):
         updates.download(GOOD, tmp_path, cancel=cancel, opener=dl_opener())
-    assert not list((tmp_path / "FolderOrganizer-update").iterdir())
+    assert not list(tmp_path.glob("FolderOrganizer-update*"))
 
 
 def test_only_installed_frozen_windows_build_self_updates(tmp_path, monkeypatch):
@@ -145,3 +145,39 @@ def test_check_due_once_a_day():
     assert updates.check_due(0, now) and updates.check_due(now - 90000, now)
     assert not updates.check_due(now - 3600, now)
     assert updates.check_due(now + 3600, now)  # jam komputer mundur
+
+
+def test_prerelease_tags_are_not_updates():
+    assert not updates.is_newer("v3.13.0-rc.1", "3.12")
+    assert not updates.is_newer("3.13-beta2", "3.12")
+    assert updates.is_newer("v3.13", "3.12.0") and not updates.is_newer("v3.12", "3.12.0")
+
+
+def test_asset_name_with_newline_or_zero_size_rejected():
+    base = {"browser_download_url": GOOD["url"], "digest": "sha256:" + "a" * 64}
+    assert updates._setup_asset([{**base, "name": GOOD["name"] + "\n", "size": 5}]) is None
+    assert updates._setup_asset([{**base, "name": GOOD["name"], "size": 0}]) is None
+
+
+def test_connection_errors_during_download_are_friendly(tmp_path):
+    import http.client
+
+    class Broken(DlResp):
+        def read(self, n=-1):
+            raise http.client.IncompleteRead(b"")
+
+    with pytest.raises(updates.UpdateError) as e:
+        updates.download(GOOD, tmp_path, opener=lambda req, timeout: Broken(b"", "https://github.com/x"))
+    assert str(e.value) == "offline"
+
+
+def test_verify_detects_file_swapped_after_download(tmp_path):
+    p = updates.download(GOOD, tmp_path, opener=dl_opener())
+    assert updates.verify(p, GOOD)
+    p.write_bytes(b"MZ evil")
+    assert not updates.verify(p, GOOD)
+
+
+def test_installer_env_is_clean():
+    env = updates.clean_env({"_PYI_APPLICATION_HOME_DIR": "x", "_MEIPASS2": "y", "TCL_LIBRARY": "z", "PATH": "p"})
+    assert env == {"PATH": "p", "PYINSTALLER_RESET_ENVIRONMENT": "1"}

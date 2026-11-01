@@ -45,13 +45,37 @@ Name: "{userdesktop}\Folder Organizer"; Filename: "{app}\Folder Organizer.exe"; 
 
 [Run]
 Filename: "{app}\Folder Organizer.exe"; Description: "{cm:LaunchProgram,Folder Organizer}"; Flags: nowait postinstall skipifsilent
-; In-app update runs the installer with /SILENT /RELAUNCH=1: reopen the app when done.
-Filename: "{app}\Folder Organizer.exe"; Parameters: "--updated"; Flags: nowait; Check: ShouldRelaunch
+; In-app update runs the installer with /SILENT /RELAUNCH=1. The app is reopened from DeinitializeSetup, also when
+; the install fails or is cancelled, so the user is never left without the app (it shows --update-failed).
 
 ; Uninstall keeps user data (%APPDATA%\FolderOrganizer: settings, undo history, logs) and the user's rules.yaml.
 
 [Code]
-function ShouldRelaunch: Boolean;
+var
+  InstallOk: Boolean;
+
+procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  Result := ExpandConstant('{param:RELAUNCH|0}') = '1';
+  if CurStep = ssDone then
+    InstallOk := True;
+end;
+
+procedure DeinitializeSetup;
+var
+  Exe, Param: String;
+  Code: Integer;
+begin
+  if ExpandConstant('{param:RELAUNCH|0}') <> '1' then
+    exit;
+  try
+    Exe := ExpandConstant('{app}\Folder Organizer.exe');
+  except
+    Exe := ExpandConstant('{localappdata}\Programs\Folder Organizer\Folder Organizer.exe');
+  end;
+  if InstallOk then
+    Param := '--updated'
+  else
+    Param := '--update-failed';
+  if FileExists(Exe) then
+    Exec(Exe, Param, '', SW_SHOW, ewNoWait, Code);
 end;

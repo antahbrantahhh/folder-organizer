@@ -271,6 +271,7 @@ def test_update_flow_downloads_then_installs_and_closes(app, target, monkeypatch
     monkeypatch.setattr(updates, "can_self_install", lambda *a: True)
     monkeypatch.setattr(updates, "download", lambda asset, progress=None, cancel=None: fake)
     monkeypatch.setattr(updates, "launch_installer", lambda p, log: calls.append(("launch", p)))
+    monkeypatch.setattr(updates, "verify", lambda p, asset: True)
     app._shutdown = lambda: calls.append(("shutdown",))
     app.start_update(info)      # AutoDialog: "Install and restart"
     wait(app)
@@ -344,3 +345,53 @@ def test_dupes_keeper_button_only_with_results_and_toolbar_fits_min_size(app, ta
     right = max(b.winfo_rootx() + b.winfo_width() for b in btns)
     page = app.pages["organize"]
     assert right <= page.winfo_rootx() + page.winfo_width() + 1, bar
+
+
+def test_yaml_draft_survives_rebuild_and_tab_switch(app, target):
+    app.folder = str(target)
+    app._build_shell()
+    app.open_rules("yaml")
+    pump(app, 0.2)
+    app.yaml_text.insert("1.0", "# my unapplied note\n")
+    app._yaml_track()
+    app._rules_section("files")
+    app._build_shell()          # sama seperti ganti tema / pindah monitor
+    app.open_rules("yaml")
+    pump(app, 0.2)
+    assert app.yaml_text.get("1.0", "2.0").startswith("# my unapplied note")
+    assert app.yaml_pending()
+
+
+def test_dpi_rebuild_waits_while_a_dialog_is_open(app, target, monkeypatch):
+    import tkinter as tk
+    app.folder = str(target)
+    app._build_shell()
+    app._dpi = 96
+    monkeypatch.setattr(app, "_window_dpi", lambda: 144)
+    rebuilt = []
+    monkeypatch.setattr(app, "_build_shell", lambda: rebuilt.append(1))
+    top = tk.Toplevel(app.root)
+    pump(app, 0.1)
+    top.grab_set()
+    app._check_dpi()
+    assert not rebuilt
+    top.grab_release()
+    top.destroy()
+    app._check_dpi()
+    assert rebuilt == [1]
+    app.root.tk.call("tk", "scaling", 96 / 72.0)
+
+
+def test_rules_edited_during_download_are_asked_before_install(app, target, monkeypatch, tmp_path):
+    import updates
+    app.folder = str(target)
+    app._build_shell()
+    asked, calls = [], []
+    monkeypatch.setattr(updates, "verify", lambda p, a: True)
+    monkeypatch.setattr(updates, "launch_installer", lambda p, log: calls.append("launch"))
+    app._shutdown = lambda: calls.append("shutdown")
+    app.dirty = True
+    monkeypatch.setattr(app, "_ask_save_rules", lambda: asked.append(1) or False)  # user memilih Cancel
+    app._install_update(tmp_path / "s.exe", {"version": "9", "asset": {}})
+    assert asked == [1] and calls == []
+    app.dirty = False

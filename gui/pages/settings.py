@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import ttk
 
 import updates
-from gui.common import (T, LANG_NAMES, HERE, VERSION, RULES_PATH, open_path, org)
+from gui.common import (T, LANG_NAMES, HERE, VERSION, RULES_PATH, open_path, org, sv_ttk)
 from gui.widgets import ScrollFrame
 
 
@@ -60,7 +60,16 @@ class SettingsPage:
 
         ttk.Checkbutton(c, text=T("set_auto_update"), variable=self.auto_upd_var, command=set_auto).pack(
             anchor="w", pady=(0, 8))
-        ttk.Button(c, text=T("btn_check_updates"), command=self.check_updates).pack(anchor="w")
+        row = ttk.Frame(c)
+        row.pack(anchor="w", fill="x")
+        ttk.Button(row, text=T("btn_check_updates"), command=self.check_updates).pack(side="left")
+        info = getattr(self, "update_info", None)
+        if info and info.get("newer"):  # tetap terlihat walau InfoBar sudah ditutup
+            ttk.Label(row, text=T("upd_available_title", v=info["version"]), style="H2.TLabel").pack(side="left",
+                                                                                              padx=(16, 8))
+            ttk.Button(row, text=T("btn_update_now") if self._can_self_install(info) else T("btn_download"),
+                       command=lambda: self.start_update(info),
+                       style="Accent.TButton" if sv_ttk else "TButton").pack(side="left")
 
         c = card(T("set_about"))
         ttk.Label(c, text=T("about_text", v=VERSION), style="Muted.TLabel").pack(anchor="w")

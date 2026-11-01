@@ -60,8 +60,10 @@ class RulesPage:
             self.infobar.show("error", T("err_title"), T("rules_load_error", err=self.doc_error))
 
     def _sync_rules_footer(self):
-        self.rules_state.configure(text=("●  " + T("rules_dirty")) if self.dirty else T("rules_clean"),
-                                   foreground=self.pal["warning"][1] if self.dirty else self.pal["muted"])
+        pending = self.dirty or self.yaml_pending()
+        text = T("rules_dirty") if self.dirty else T("rules_yaml_pending")
+        self.rules_state.configure(text=("●  " + text) if pending else T("rules_clean"),
+                                   foreground=self.pal["warning"][1] if pending else self.pal["muted"])
         self.btn_save.state(["!disabled"] if self.dirty else ["disabled"])
         self.btn_revert.state(["!disabled"] if self.dirty else ["disabled"])
 
@@ -290,7 +292,7 @@ class RulesPage:
         bar.pack(fill="x", pady=(8, 8))
         ttk.Button(bar, text=T("btn_yaml_apply"), command=self._yaml_apply,
                    style="Accent.TButton" if sv_ttk else "TButton").pack(side="left")
-        ttk.Button(bar, text=T("btn_yaml_reload"), command=self._yaml_fill).pack(side="left", padx=8)
+        ttk.Button(bar, text=T("btn_yaml_reload"), command=lambda: self._yaml_fill(keep_draft=False)).pack(side="left", padx=8)
         wrap = ttk.Frame(body)
         wrap.pack(fill="both", expand=True)
         self.yaml_text = tk.Text(wrap, wrap="none", undo=True, font=(self.fonts.mono, 10), relief="flat",
@@ -302,11 +304,32 @@ class RulesPage:
         self.yaml_text.pack(side="left", fill="both", expand=True)
         vs.pack(side="right", fill="y")
         self._yaml_fill()
+        # Teks YAML yang belum di-Apply disimpan sebagai draft: tidak hilang saat pindah tab, ganti tema/bahasa,
+        # atau UI dibangun ulang karena pindah monitor.
+        self.yaml_text.bind("<KeyRelease>", lambda e: self._yaml_track(), add="+")
+        self.yaml_text.bind("<<Paste>>", lambda e: self.root.after(10, self._yaml_track), add="+")
+        self.yaml_text.bind("<<Cut>>", lambda e: self.root.after(10, self._yaml_track), add="+")
 
     def _dump_doc(self):
         return self.rules_doc.render(self.doc)
 
-    def _yaml_fill(self):
+    def _yaml_track(self):
+        try:
+            raw = self.yaml_text.get("1.0", "end-1c")
+        except (AttributeError, tk.TclError):
+            return
+        self.yaml_draft = None if raw == getattr(self, "_yaml_base", None) else raw
+        self._sync_rules_footer()
+
+    def yaml_pending(self) -> bool:
+        return bool(getattr(self, "yaml_draft", None))
+
+    def _yaml_fill(self, keep_draft=True):
+        if keep_draft and self.yaml_pending():
+            self.yaml_text.delete("1.0", "end")
+            self.yaml_text.insert("1.0", self.yaml_draft)
+            return
+        self.yaml_draft = None
         if self.doc_error and not self.dirty:
             try:
                 raw = RULES_PATH.read_text(encoding="utf-8")
@@ -316,8 +339,13 @@ class RulesPage:
             raw = self._dump_doc()
         self.yaml_text.delete("1.0", "end")
         self.yaml_text.insert("1.0", raw)
+        self._yaml_base = self.yaml_text.get("1.0", "end-1c")
+        try:
+            self._sync_rules_footer()
+        except (AttributeError, tk.TclError):
+            pass
 
-    def _yaml_apply(self):
+    def _yaml_apply(self) -> bool:
         raw = self.yaml_text.get("1.0", "end")
         try:
             # komentar yang diketik di tab YAML ikut tersimpan; hash file lama dibawa untuk deteksi konflik
@@ -326,17 +354,44 @@ class RulesPage:
             org.prepare_config(copy.deepcopy(doc))
         except SystemExit as e:
             self.infobar.show("error", T("yaml_invalid"), str(e.code))
-            return
+            return False
         except Exception as e:
             self.infobar.show("error", T("yaml_invalid"), str(e))
-            return
+            return False
         self.rules_doc, self.doc, self.doc_error = new_doc, doc, None
+        self.yaml_draft = None
+        self._yaml_base = raw.rstrip("\n")
         for k in ("rules", "folder_rules"):
             self.doc.setdefault(k, [])
         self.doc.setdefault("folder_info", {})
         self.sel_rule = {"rules": None, "folder_rules": None}
         self._mark_dirty()
         self.infobar.show("success", T("ib_yaml_applied"), timeout=6000)
+        return True
+
+    def confirm_yaml_draft(self) -> bool:
+        """Sebelum menutup / update: teks YAML yang belum di-Apply → Apply, buang, atau batal."""
+        if not self.yaml_pending():
+            return True
+        r = Dialog(self, T("dlg_yaml_pending_title"), T("dlg_yaml_pending_msg"),
+                   [("apply", T("btn_yaml_apply"), True), ("discard", T("btn_discard"), False),
+                    (None, T("btn_cancel"), False)]).result
+        if r is None:
+            return False
+        if r == "discard":
+            self.yaml_draft = None
+            return True
+        if not self._yaml_apply_draft():
+            return False
+        return True
+
+    def _yaml_apply_draft(self) -> bool:
+        """Apply draft walau tab YAML sedang tidak terbuka."""
+        if not getattr(self, "yaml_text", None) or not self.yaml_text.winfo_exists():
+            self.open_rules("yaml")
+        self.yaml_text.delete("1.0", "end")
+        self.yaml_text.insert("1.0", self.yaml_draft)
+        return self._yaml_apply()
 
     # — save / revert —
     def save_rules(self) -> bool:
@@ -391,6 +446,7 @@ class RulesPage:
         return True
 
     def revert_rules(self):
+        self.yaml_draft = None
         self._load_doc()
         self.sel_rule = {"rules": None, "folder_rules": None}
         self.sel_label = None

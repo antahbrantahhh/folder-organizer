@@ -5,7 +5,7 @@ import time
 import webbrowser
 
 import updates
-from gui.common import (T, VERSION, UserError, org)
+from gui.common import (T, VERSION, UserError, open_path, org)
 from gui.widgets import Dialog
 
 
@@ -16,6 +16,11 @@ class UpdaterMixin:
         self.update_info = None
         if "--updated" in sys.argv:
             self.root.after(800, lambda: self.infobar.show("success", T("upd_done", v=VERSION), timeout=8000))
+        elif "--update-failed" in sys.argv:  # installer gagal/dibatalkan; versi lama tetap utuh
+            log = org.log_dir() / "update-install.log"
+            self.root.after(800, lambda: self.infobar.show(
+                "error", T("upd_install_failed_title"), T("upd_install_failed", v=VERSION),
+                action=(T("btn_open_log"), lambda: open_path(log if log.exists() else org.log_dir()))))
         self._update_job = self.root.after(self.UPDATE_START_DELAY_MS, self._auto_check_updates)
 
     # ── cek otomatis ──
@@ -25,19 +30,28 @@ class UpdaterMixin:
         now = time.time()
         if not updates.check_due(self.settings.get("last_update_check", 0), now):
             return
-        self.settings["last_update_check"] = now
-        self._save_settings()
 
         def worker():
             try:
                 info = updates.check(VERSION)
             except updates.UpdateError as e:
-                org.log.info("auto update check: %s", e)
+                org.log.info("auto update check: %s", e)  # offline dll.: dicoba lagi saat app dibuka berikutnya
                 return
+            self.q.put(lambda: self._checked(now))
             if info["newer"]:
                 self.q.put(lambda: self._offer_update(info, auto=True))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _checked(self, when):
+        self.settings["last_update_check"] = when
+        self._save_settings()
+
+    def _reoffer_update(self):
+        """Tawaran update tidak hilang setelah UI dibangun ulang (tema, bahasa, pindah monitor)."""
+        info = getattr(self, "update_info", None)
+        if info and info.get("newer") and self.settings.get("skip_update_version") != info["version"]:
+            self.root.after(300, lambda: self._offer_update(info, auto=True))
 
     def _offer_update(self, info, auto=False):
         self.update_info = info
@@ -56,7 +70,7 @@ class UpdaterMixin:
                 raise UserError(self._update_error_text(e))
 
         def done(info):
-            self.settings["last_update_check"] = time.time()
+            self._checked(time.time())
             if not info["newer"]:
                 self.infobar.show("success", T("upd_latest", v=VERSION), timeout=6000)
                 return
@@ -94,7 +108,7 @@ class UpdaterMixin:
         if self.busy:
             self.infobar.show("info", T("busy"), timeout=3000)
             return
-        if self.dirty and not self._ask_save_rules():
+        if not self._rules_saved_or_discarded():
             return
 
         def job():
@@ -115,8 +129,21 @@ class UpdaterMixin:
 
         self.run_bg(T("task_download_update", v=info["version"]), job, done)
 
+    def _rules_saved_or_discarded(self) -> bool:
+        if hasattr(self, "confirm_yaml_draft") and not self.confirm_yaml_draft():
+            return False
+        return not self.dirty or self._ask_save_rules()
+
     def _install_update(self, path, info):
+        # aturan bisa saja diedit selama download berjalan → tanya lagi sebelum app ditutup
+        if not self._rules_saved_or_discarded():
+            return
+        if not updates.verify(path, info["asset"]):  # file di disk diganti/rusak sejak diunduh
+            org.log.error("update file changed after download: %s", path)
+            self.infobar.show("error", T("err_title"), T("upd_verify_failed", err="changed on disk"))
+            return
         if self.watch_active:
+            self.watch_active = False
             self.watch_stop.set()
         log_file = org.log_dir() / "update-install.log"
         try:

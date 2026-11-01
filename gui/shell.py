@@ -81,6 +81,8 @@ class AppShell:
         org.log.info("dpi %s", dpi)
         if rebuild:
             self._build_shell()
+            if hasattr(self, "_reoffer_update"):
+                self._reoffer_update()
 
     def _on_root_configure(self, e):
         if e.widget is not self.root or sys.platform != "win32":
@@ -95,7 +97,7 @@ class AppShell:
         dpi = self._window_dpi()
         if not dpi or dpi == self._dpi:
             return
-        if self.busy:
+        if self.busy or self.root.grab_current() is not None:  # jangan bangun ulang saat sibuk / ada dialog terbuka
             self._dpi_job = self.root.after(1000, self._check_dpi)
             return
         self._dpi = dpi
@@ -575,6 +577,8 @@ class AppShell:
             if self.cancel_event is not None:
                 self.cancel_event.set()
             self._close_when_idle(time.time())
+            return
+        if hasattr(self, "confirm_yaml_draft") and not self.confirm_yaml_draft():
             return
         if self.dirty:
             r = Dialog(self, T("dlg_unsaved_title"), T("dlg_unsaved_msg"),
